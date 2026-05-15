@@ -1,0 +1,202 @@
+'use client';
+
+import { EmailItem, useMailStore } from '@/lib/store';
+import { toggleStar } from '@/app/actions/email-actions';
+import { Star, Paperclip } from '@phosphor-icons/react';
+import { useRouter } from 'next/navigation';
+import { useTransition } from 'react';
+
+interface EmailListItemProps {
+  email: EmailItem;
+  isSelected: boolean;
+  onSelect: () => void;
+}
+
+function formatDate(dateStr: string) {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const isToday = date.toDateString() === now.toDateString();
+
+  if (isToday) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) {
+    return 'Yesterday';
+  }
+
+  if (date.getFullYear() === now.getFullYear()) {
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+
+  return date.toLocaleDateString([], {
+    month: 'short',
+    day: 'numeric',
+    year: '2-digit',
+  });
+}
+
+function extractName(from: string): string {
+  const match = from.match(/^"?(.+?)"?\s*<.+>$/);
+  return match ? match[1] : from.split('@')[0];
+}
+
+function getInitials(name: string): string {
+  return name
+    .split(' ')
+    .map((w) => w[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
+}
+
+function getAvatarColor(name: string): string {
+  const colors = [
+    'bg-blue-500/10 text-blue-600',
+    'bg-emerald-500/10 text-emerald-600',
+    'bg-violet-500/10 text-violet-600',
+    'bg-amber-500/10 text-amber-600',
+    'bg-rose-500/10 text-rose-600',
+    'bg-cyan-500/10 text-cyan-600',
+    'bg-pink-500/10 text-pink-600',
+    'bg-indigo-500/10 text-indigo-600',
+  ];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return colors[Math.abs(hash) % colors.length];
+}
+
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
+}
+
+export function EmailListItem({
+  email,
+  isSelected,
+  onSelect,
+}: EmailListItemProps) {
+  const router = useRouter();
+  const { selectedIds, toggleSelected } = useMailStore();
+  const [isPending, startTransition] = useTransition();
+  const isChecked = selectedIds.has(email.id);
+
+  const senderName = extractName(email.from);
+  const snippet = email.text || (email.html ? stripHtml(email.html) : '');
+
+  const handleStarClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    startTransition(async () => {
+      await toggleStar(email.id);
+    });
+  };
+
+  const handleCheckbox = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    toggleSelected(email.id);
+  };
+
+  const handleClick = () => {
+    onSelect();
+    router.push(`/email/${email.id}`);
+  };
+
+  return (
+    <div
+      onClick={handleClick}
+      className={`group flex cursor-pointer items-center gap-3 border-b border-border/50 px-4 py-3 transition-all duration-150 ${
+        isSelected
+          ? 'bg-primary/5 border-l-2 border-l-primary'
+          : email.isRead
+            ? 'hover:bg-muted/50'
+            : 'bg-primary/[0.02] hover:bg-primary/5'
+      }`}
+    >
+      {/* Checkbox */}
+      <div onClick={handleCheckbox} className="shrink-0">
+        <div
+          className={`flex h-5 w-5 items-center justify-center rounded border transition-colors ${
+            isChecked
+              ? 'border-primary bg-primary'
+              : 'border-border group-hover:border-muted-foreground/40'
+          }`}
+        >
+          {isChecked && (
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path
+                d="M2 6L5 9L10 3"
+                stroke="white"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          )}
+        </div>
+      </div>
+
+      {/* Star */}
+      <button
+        onClick={handleStarClick}
+        className="shrink-0 transition-colors"
+        disabled={isPending}
+      >
+        <Star
+          size={18}
+          weight={email.isStarred ? 'fill' : 'regular'}
+          className={
+            email.isStarred
+              ? 'text-amber-400'
+              : 'text-muted-foreground/30 hover:text-amber-400/60'
+          }
+        />
+      </button>
+
+      {/* Avatar */}
+      <div
+        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${getAvatarColor(senderName)}`}
+      >
+        {getInitials(senderName)}
+      </div>
+
+      {/* Content */}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline gap-2">
+          <span
+            className={`truncate text-sm ${
+              email.isRead
+                ? 'text-foreground/70'
+                : 'font-semibold text-foreground'
+            }`}
+          >
+            {senderName}
+          </span>
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {formatDate(email.createdAt)}
+          </span>
+        </div>
+        <p
+          className={`truncate text-sm ${
+            email.isRead ? 'text-muted-foreground' : 'font-medium text-foreground/80'
+          }`}
+        >
+          {email.subject}
+        </p>
+        <p className="truncate text-xs text-muted-foreground/60">{snippet}</p>
+      </div>
+
+      {/* Attachment indicator */}
+      {email.attachments && email.attachments.length > 0 && (
+        <Paperclip size={14} className="shrink-0 text-muted-foreground/40" />
+      )}
+
+      {/* Unread dot */}
+      {!email.isRead && (
+        <div className="h-2 w-2 shrink-0 rounded-full bg-primary" />
+      )}
+    </div>
+  );
+}

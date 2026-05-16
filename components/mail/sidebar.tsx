@@ -202,6 +202,7 @@ export function MailSidebar() {
                 src={session.user.image}
                 alt=""
                 className="h-8 w-8 rounded-full"
+                referrerPolicy="no-referrer"
               />
             ) : (
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">

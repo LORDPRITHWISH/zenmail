@@ -1,104 +1,80 @@
 import { NextResponse } from 'next/server';
-import { Webhook } from 'svix';
+import { Resend } from 'resend';
 import { connectDB } from '@/lib/mongoose';
 import { User } from '@/models/User';
 import { Email } from '@/models/Email';
 import mongoose from 'mongoose';
 
+const resend = new Resend(process.env.RESEND_API_KEY);
+
 export async function POST(request: Request) {
-  const secret = process.env.RESEND_WEBHOOK_SECRET;
+  let body: Record<string, unknown>;
 
-  if (!secret) {
-    console.error('RESEND_WEBHOOK_SECRET is not set');
-    return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
-  }
-
-  const body = await request.text();
-  const svixId = request.headers.get('svix-id');
-  const svixTimestamp = request.headers.get('svix-timestamp');
-  const svixSignature = request.headers.get('svix-signature');
-
-  if (!svixId || !svixTimestamp || !svixSignature) {
-    return NextResponse.json({ error: 'Missing svix headers' }, { status: 400 });
-  }
-
-  let event: Record<string, unknown>;
   try {
-    const wh = new Webhook(secret);
-    event = wh.verify(body, {
-      'svix-id': svixId,
-      'svix-timestamp': svixTimestamp,
-      'svix-signature': svixSignature,
-    }) as Record<string, unknown>;
-  } catch (err) {
-    console.error('Webhook verification failed:', err);
-    return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const eventType = event.type as string;
-  const data = event.data as Record<string, unknown>;
+  // Resend sends: { type: "email.received", created_at: "...", data: { email_id, from, to, ... } }
+  const eventType = (body.type as string) || 'email.received';
+  const data = (body.data as Record<string, unknown>) ?? body;
 
   try {
     await connectDB();
 
     if (eventType === 'email.received') {
       await handleInboundEmail(data);
-    } else if (eventType === 'email.sent') {
-      const messageId = data.email_id as string;
-      if (messageId) {
-        // No-op update to match previous behaviour (delivery status hook)
-        await Email.updateMany({ messageId }, {});
-      }
     } else if (eventType === 'email.bounced') {
       console.warn('Email bounced:', data.email_id);
     }
+    // Ignore email.sent — we track those ourselves
   } catch (err) {
     console.error(`Error handling ${eventType}:`, err);
-    // Still return 200 to prevent Resend from retrying
+    // Always return 200 to prevent Resend from retrying indefinitely
   }
 
   return NextResponse.json({ received: true });
 }
 
-async function handleInboundEmail(data: Record<string, unknown>) {
-  const from = data.from as string;
-  const to = (data.to as string[]) || [];
-  const cc = (data.cc as string[]) || [];
-  const subject = (data.subject as string) || '(No Subject)';
-  const html = data.html as string | undefined;
-  const text = data.text as string | undefined;
-  const messageId = data.email_id as string;
-  const inReplyTo = data.in_reply_to as string | undefined;
-  const references = (data.references as string[]) || [];
+async function handleInboundEmail(webhookData: Record<string, unknown>) {
+  const emailId = webhookData.email_id as string;
 
-  const allRecipients = [...to, ...cc];
-
-  // Find admin users (they see everything)
-  const adminUsers = await User.find({ role: 'admin' }).select('_id email').lean();
-
-  // Find matching recipient users
-  const recipientEmails = allRecipients.map(extractEmail);
-  const recipientUsers = await User.find({
-    email: { $in: recipientEmails.map((e) => new RegExp(`^${escapeRegex(e)}$`, 'i')) },
-  })
-    .select('_id email')
-    .lean();
-
-  // Combine unique user IDs
-  const userIds = new Set<string>();
-  recipientUsers.forEach((u) => userIds.add(u._id.toString()));
-  adminUsers.forEach((u) => userIds.add(u._id.toString()));
-
-  if (userIds.size === 0) {
-    console.log('No matching users for inbound email from:', from);
+  if (!emailId) {
+    console.error('Inbound webhook missing email_id', webhookData);
     return;
   }
 
-  const threadId = inReplyTo || messageId;
+  // ── Fetch full email content from Resend API ──────────────────────────────
+  // The webhook only contains metadata. Body (html/text) must be fetched separately.
+  const { data: full, error } = await resend.emails.receiving.get(emailId);
 
-  const createPromises = Array.from(userIds).map((userId) =>
+  if (error || !full) {
+    console.error('Failed to retrieve full email content for', emailId, error);
+    // Fall back to webhook metadata so we at least store something
+  }
+
+  const from = (full?.from ?? webhookData.from) as string;
+  const to = ((full?.to ?? webhookData.to) as string[]) || [];
+  const cc = ((full?.cc ?? webhookData.cc) as string[]) || [];
+  const subject = ((full?.subject ?? webhookData.subject) as string) || '(No Subject)';
+  const html = full?.html as string | undefined;
+  const text = full?.text as string | undefined;
+  const inReplyTo = webhookData.in_reply_to as string | undefined;
+  const references = (webhookData.references as string[]) || [];
+
+  // Use the Resend message_id (SMTP) as the thread anchor, email_id as the doc key
+  const threadId = inReplyTo || emailId;
+
+  console.log('Inbound email:', { emailId, from, to, subject, hasHtml: !!html, hasText: !!text });
+
+  // ── 1. Deliver to ALL registered users immediately ────────────────────────
+  // No privacy restriction — every registered user sees every inbound email.
+  const allUsers = await User.find({}).select('_id').lean() as Array<{ _id: mongoose.Types.ObjectId }>;
+
+  const userInserts = allUsers.map((u) =>
     Email.create({
-      messageId: `${messageId}-${userId}`,
+      messageId: `${emailId}-uid-${u._id}`,
       from,
       to,
       cc,
@@ -110,19 +86,56 @@ async function handleInboundEmail(data: Record<string, unknown>) {
       inReplyTo,
       threadId,
       references,
-      userId: new mongoose.Types.ObjectId(userId),
+      userId: u._id,
+    }).catch((err: { code?: number }) => {
+      if (err?.code === 11000) return null; // duplicate (Resend retry) — safe to ignore
+      throw err;
     })
   );
 
-  await Promise.all(createPromises);
-  console.log(`Delivered inbound email to ${userIds.size} users`);
+  const userResults = await Promise.all(userInserts);
+  const deliveredCount = userResults.filter(Boolean).length;
+
+  // ── 2. Park pending copies for unregistered recipient addresses ───────────
+  // These are claimed automatically when the user signs up (see lib/auth.ts).
+  const recipientEmails = [...new Set([...to, ...cc].map(extractEmail))];
+  const registeredEmails = new Set(
+    (await User.find({}).select('email').lean() as Array<{ email: string }>)
+      .map((u) => u.email.toLowerCase())
+  );
+
+  const pendingInserts = recipientEmails
+    .filter((e) => !registeredEmails.has(e.toLowerCase()))
+    .map((recipientEmail) =>
+      Email.create({
+        messageId: `${emailId}-pending-${recipientEmail}`,
+        from,
+        to,
+        cc,
+        subject,
+        html,
+        text,
+        folder: 'inbox',
+        isRead: false,
+        inReplyTo,
+        threadId,
+        references,
+        pendingRecipientEmail: recipientEmail,
+      }).catch((err: { code?: number }) => {
+        if (err?.code === 11000) return null;
+        throw err;
+      })
+    );
+
+  const pendingResults = await Promise.all(pendingInserts);
+  const pendingCount = pendingResults.filter(Boolean).length;
+
+  console.log(
+    `✓ "${subject}" from ${from} → ${deliveredCount} delivered, ${pendingCount} pending`
+  );
 }
 
 function extractEmail(input: string): string {
   const match = input.match(/<(.+?)>/);
   return match ? match[1] : input.trim();
-}
-
-function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

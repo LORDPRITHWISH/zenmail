@@ -20,6 +20,10 @@ export const authConfig: NextAuthConfig = {
       if (user) {
         token.id = user.id;
         token.role = (user as Record<string, unknown>).role || 'user';
+        // Persist Google profile fields so they survive across requests
+        if (user.image) token.picture = user.image;
+        if (user.name) token.name = user.name;
+        if (user.email) token.email = user.email;
       }
       return token;
     },
@@ -28,6 +32,10 @@ export const authConfig: NextAuthConfig = {
         session.user.id = token.id as string;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (session.user as any).role = token.role as string;
+        // Forward profile fields from token → session
+        if (token.picture) session.user.image = token.picture as string;
+        if (token.name) session.user.name = token.name as string;
+        if (token.email) session.user.email = token.email as string;
       }
       return session;
     },

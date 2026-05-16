@@ -1,9 +1,9 @@
-'use client';
+"use client"
 
-import { useEffect, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
-import { getEmail, toggleStar, deleteEmails } from '@/app/actions/email-actions';
-import { useMailStore } from '@/lib/store';
+import { useEffect, useRef, useState, useTransition, useCallback } from "react"
+import { useRouter } from "next/navigation"
+import { getEmail, toggleStar, deleteEmails } from "@/app/actions/email-actions"
+import { useMailStore } from "@/lib/store"
 import {
   ArrowLeft,
   Star,
@@ -14,71 +14,71 @@ import {
   ArrowsClockwise,
   Paperclip,
   DownloadSimple,
-} from '@phosphor-icons/react';
+} from "@phosphor-icons/react"
 
 interface EmailViewProps {
-  emailId: string;
+  emailId: string
 }
 
 function formatFullDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString([], {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
 }
 
 function extractName(from: string): string {
-  const match = from.match(/^"?(.+?)"?\s*<.+>$/);
-  return match ? match[1] : from.split('@')[0];
+  const match = from.match(/^"?(.+?)"?\s*<.+>$/)
+  return match ? match[1] : from.split("@")[0]
 }
 
 function extractEmail(from: string): string {
-  const match = from.match(/<(.+?)>/);
-  return match ? match[1] : from;
+  const match = from.match(/<(.+?)>/)
+  return match ? match[1] : from
 }
 
 function getInitials(name: string): string {
   return name
-    .split(' ')
+    .split(" ")
     .map((w) => w[0])
-    .join('')
+    .join("")
     .toUpperCase()
-    .slice(0, 2);
+    .slice(0, 2)
 }
 
 function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return bytes + ' B';
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  if (bytes < 1024) return bytes + " B"
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB"
+  return (bytes / (1024 * 1024)).toFixed(1) + " MB"
 }
 
 export function EmailView({ emailId }: EmailViewProps) {
-  const router = useRouter();
-  const { openReply } = useMailStore();
-  const [email, setEmail] = useState<Record<string, unknown> | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isPending, startTransition] = useTransition();
+  const router = useRouter()
+  const { openReply } = useMailStore()
+  const [email, setEmail] = useState<Record<string, unknown> | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isPending, startTransition] = useTransition()
 
   useEffect(() => {
-    setIsLoading(true);
+    setIsLoading(true)
     getEmail(emailId).then((result) => {
       if (result.email) {
-        setEmail(result.email);
+        setEmail(result.email)
       }
-      setIsLoading(false);
-    });
-  }, [emailId]);
+      setIsLoading(false)
+    })
+  }, [emailId])
 
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
       </div>
-    );
+    )
   }
 
   if (!email) {
@@ -86,12 +86,13 @@ export function EmailView({ emailId }: EmailViewProps) {
       <div className="flex h-full items-center justify-center">
         <p className="text-muted-foreground">Email not found</p>
       </div>
-    );
+    )
   }
 
-  const senderName = extractName(email.from as string);
-  const senderEmail = extractEmail(email.from as string);
-  const attachments = (email.attachments as Array<Record<string, unknown>>) || [];
+  const senderName = extractName(email.from as string)
+  const senderEmail = extractEmail(email.from as string)
+  const attachments =
+    (email.attachments as Array<Record<string, unknown>>) || []
 
   return (
     <div className="flex h-full flex-col">
@@ -109,9 +110,9 @@ export function EmailView({ emailId }: EmailViewProps) {
         <button
           onClick={() =>
             startTransition(async () => {
-              await toggleStar(emailId);
-              const result = await getEmail(emailId);
-              if (result.email) setEmail(result.email);
+              await toggleStar(emailId)
+              const result = await getEmail(emailId)
+              if (result.email) setEmail(result.email)
             })
           }
           disabled={isPending}
@@ -119,16 +120,16 @@ export function EmailView({ emailId }: EmailViewProps) {
         >
           <Star
             size={18}
-            weight={(email.isStarred as boolean) ? 'fill' : 'regular'}
-            className={(email.isStarred as boolean) ? 'text-amber-400' : ''}
+            weight={(email.isStarred as boolean) ? "fill" : "regular"}
+            className={(email.isStarred as boolean) ? "text-amber-400" : ""}
           />
         </button>
 
         <button
           onClick={() =>
             startTransition(async () => {
-              await deleteEmails([emailId]);
-              router.back();
+              await deleteEmails([emailId])
+              router.back()
             })
           }
           disabled={isPending}
@@ -158,14 +159,16 @@ export function EmailView({ emailId }: EmailViewProps) {
               </span>
             </div>
             <div className="mt-0.5 text-xs text-muted-foreground">
-              to{' '}
-              {(email.to as string[]).map((t: string) => extractName(t)).join(', ')}
+              to{" "}
+              {(email.to as string[])
+                .map((t: string) => extractName(t))
+                .join(", ")}
               {(email.cc as string[])?.length > 0 && (
                 <span>
-                  , cc:{' '}
+                  , cc:{" "}
                   {(email.cc as string[])
                     .map((t: string) => extractName(t))
-                    .join(', ')}
+                    .join(", ")}
                 </span>
               )}
             </div>
@@ -179,11 +182,11 @@ export function EmailView({ emailId }: EmailViewProps) {
         <div className="rounded-xl border border-border bg-card p-6">
           {email.html ? (
             <div
-              className="prose prose-sm max-w-none dark:prose-invert"
+              className="prose prose-sm dark:prose-invert max-w-none"
               dangerouslySetInnerHTML={{ __html: email.html as string }}
             />
           ) : (
-            <pre className="whitespace-pre-wrap text-sm text-foreground/80">
+            <pre className="text-sm whitespace-pre-wrap text-foreground/80">
               {email.text as string}
             </pre>
           )}
@@ -194,7 +197,7 @@ export function EmailView({ emailId }: EmailViewProps) {
           <div className="mt-6">
             <h3 className="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
               <Paperclip size={16} />
-              {attachments.length} Attachment{attachments.length > 1 ? 's' : ''}
+              {attachments.length} Attachment{attachments.length > 1 ? "s" : ""}
             </h3>
             <div className="grid grid-cols-2 gap-2">
               {attachments.map((att) => (
@@ -204,7 +207,7 @@ export function EmailView({ emailId }: EmailViewProps) {
                 >
                   <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-xs font-semibold text-primary">
                     {(att.filename as string)
-                      .split('.')
+                      .split(".")
                       .pop()
                       ?.toUpperCase()
                       .slice(0, 3)}
@@ -230,7 +233,10 @@ export function EmailView({ emailId }: EmailViewProps) {
         <div className="mt-8 flex gap-2">
           <button
             onClick={() =>
-              openReply(email as unknown as import('@/lib/store').EmailItem, 'reply')
+              openReply(
+                email as unknown as import("@/lib/store").EmailItem,
+                "reply"
+              )
             }
             className="flex items-center gap-2 rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
           >
@@ -239,7 +245,10 @@ export function EmailView({ emailId }: EmailViewProps) {
           </button>
           <button
             onClick={() =>
-              openReply(email as unknown as import('@/lib/store').EmailItem, 'replyAll')
+              openReply(
+                email as unknown as import("@/lib/store").EmailItem,
+                "replyAll"
+              )
             }
             className="flex items-center gap-2 rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
           >
@@ -248,7 +257,10 @@ export function EmailView({ emailId }: EmailViewProps) {
           </button>
           <button
             onClick={() =>
-              openReply(email as unknown as import('@/lib/store').EmailItem, 'forward')
+              openReply(
+                email as unknown as import("@/lib/store").EmailItem,
+                "forward"
+              )
             }
             className="flex items-center gap-2 rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
           >
@@ -258,5 +270,5 @@ export function EmailView({ emailId }: EmailViewProps) {
         </div>
       </div>
     </div>
-  );
+  )
 }

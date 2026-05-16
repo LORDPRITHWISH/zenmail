@@ -4,6 +4,7 @@ import { MongoClient } from 'mongodb';
 import { authConfig } from './auth.config';
 import { connectDB } from './mongoose';
 import { User } from '@/models/User';
+import { Email } from '@/models/Email';
 
 // Shared MongoClient instance for the adapter (it needs the native driver, not mongoose)
 const client = new MongoClient(process.env.DATABASE_URL!);
@@ -27,11 +28,25 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   },
   events: {
     async createUser({ user }) {
+      await connectDB();
+
+      // Promote to admin if this is the designated admin email
       const adminEmail = process.env.ADMIN_EMAIL;
       if (adminEmail && user.email === adminEmail) {
-        await connectDB();
         await User.findByIdAndUpdate(user.id, { role: 'admin' });
+      }
+
+      // Claim any emails that arrived before this user registered
+      if (user.email && user.id) {
+        const claimed = await Email.updateMany(
+          { pendingRecipientEmail: new RegExp(`^${user.email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+          { $set: { userId: user.id }, $unset: { pendingRecipientEmail: '' } }
+        );
+        if (claimed.modifiedCount > 0) {
+          console.log(`Claimed ${claimed.modifiedCount} pending email(s) for new user: ${user.email}`);
+        }
       }
     },
   },
 });
+

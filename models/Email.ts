@@ -33,8 +33,9 @@ export interface IEmail extends Document {
   threadId?: string;
   references: string[];
 
-  // Ownership
-  userId: mongoose.Types.ObjectId;
+  // Ownership — optional until the recipient registers
+  userId?: mongoose.Types.ObjectId;
+  pendingRecipientEmail?: string; // set when recipient has no account yet
 
   attachments: IAttachment[];
 
@@ -73,7 +74,8 @@ const EmailSchema = new Schema<IEmail>(
     threadId: { type: String },
     references: { type: [String], default: [] },
 
-    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    userId: { type: Schema.Types.ObjectId, ref: 'User', required: false, default: null },
+    pendingRecipientEmail: { type: String, default: null },
 
     attachments: { type: [AttachmentSchema], default: [] },
   },
@@ -84,5 +86,6 @@ const EmailSchema = new Schema<IEmail>(
 EmailSchema.index({ userId: 1, folder: 1 });
 EmailSchema.index({ userId: 1, isRead: 1 });
 EmailSchema.index({ threadId: 1 });
+EmailSchema.index({ pendingRecipientEmail: 1 }); // fast lookup on user sign-up
 
 export const Email = models.Email || model<IEmail>('Email', EmailSchema);

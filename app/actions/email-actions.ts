@@ -53,7 +53,7 @@ export async function getEmails(
       ...e,
       id: e._id.toString(),
       _id: e._id.toString(),
-      userId: e.userId.toString(),
+      userId: e.userId?.toString() ?? null,
       attachments: (e.attachments || []).map((a: IAttachment) => ({
         ...a,
         id: a._id.toString(),
@@ -94,7 +94,7 @@ export async function getEmail(id: string) {
       ...email,
       id: email._id.toString(),
       _id: email._id.toString(),
-      userId: email.userId.toString(),
+      userId: email.userId?.toString() ?? null,
       attachments: (email.attachments || []).map((a: IAttachment) => ({
         ...a,
         id: a._id.toString(),

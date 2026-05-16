@@ -1,9 +1,8 @@
 'use client';
 
 import { useEffect, useState, useTransition } from 'react';
-import { adminGetInboxes } from '@/app/actions/admin-actions';
-import { CaretRight, Tray, Plus } from '@phosphor-icons/react';
-import Link from 'next/link';
+import { adminGetInboxes, adminToggleMonitorInbox } from '@/app/actions/admin-actions';
+import { Tray, Plus } from '@phosphor-icons/react';
 import { useRouter } from 'next/navigation';
 
 interface InboxItem {
@@ -11,6 +10,7 @@ interface InboxItem {
   count: number;
   unreadCount: number;
   lastEmail: string;
+  isMonitored?: boolean;
 }
 
 export default function AdminInboxesPage() {
@@ -24,24 +24,44 @@ export default function AdminInboxesPage() {
 
   const handleCreateInbox = (e: React.FormEvent) => {
     e.preventDefault();
-    if (newInboxEmail && newInboxEmail.includes('@')) {
-      router.push(`/admin/inboxes/${encodeURIComponent(newInboxEmail.trim())}`);
+    const domain = process.env.NEXT_PUBLIC_RESEND_DOMAIN || 'yourdomain.com';
+    let finalEmail = newInboxEmail.trim();
+
+    if (finalEmail && !finalEmail.includes('@')) {
+      finalEmail = `${finalEmail}@${domain}`;
+    }
+
+    if (finalEmail && finalEmail.endsWith(`@${domain}`)) {
+      router.push(`/admin/inboxes/${encodeURIComponent(finalEmail)}`);
       setIsModalOpen(false);
       setNewInboxEmail('');
       setEmailError('');
     } else {
-      setEmailError("Please enter a valid email address.");
+      setEmailError(`Only @${domain} email addresses are supported.`);
     }
   };
 
-  useEffect(() => {
+  const fetchInboxes = () => {
     startTransition(async () => {
       setIsLoading(true);
       const result = await adminGetInboxes();
       setInboxes(result as InboxItem[]);
       setIsLoading(false);
     });
+  };
+
+  useEffect(() => {
+    fetchInboxes();
   }, []);
+
+  const handleToggleMonitor = async (email: string) => {
+    startTransition(async () => {
+      const result = await adminToggleMonitorInbox(email);
+      if (result.success) {
+        setInboxes(inboxes.map(i => i.email === email ? { ...i, isMonitored: result.isMonitored } : i));
+      }
+    });
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -61,19 +81,19 @@ export default function AdminInboxesPage() {
           <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-xl">
             <h2 className="mb-2 text-xl font-bold text-foreground">Create New Inbox</h2>
             <p className="mb-6 text-sm text-muted-foreground">
-              Enter the email address for the new inbox.
+              Enter a username or full email address.
             </p>
             <form onSubmit={handleCreateInbox}>
               <div className="mb-6">
                 <input
-                  type="email"
+                  type="text"
                   autoFocus
                   value={newInboxEmail}
                   onChange={(e) => {
                     setNewInboxEmail(e.target.value);
                     setEmailError('');
                   }}
-                  placeholder="e.g., support@yourdomain.com"
+                  placeholder={`e.g., support or support@${process.env.NEXT_PUBLIC_RESEND_DOMAIN || 'yourdomain.com'}`}
                   className="w-full rounded-lg border border-border bg-background px-4 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 />
                 {emailError && <p className="mt-2 text-xs text-destructive">{emailError}</p>}
@@ -144,7 +164,8 @@ export default function AdminInboxesPage() {
                 inboxes.map((inbox) => (
                   <tr
                     key={inbox.email}
-                    className="group border-b border-border/50 transition-colors hover:bg-muted/30"
+                    onClick={() => router.push(`/admin/inboxes/${encodeURIComponent(inbox.email)}`)}
+                    className="group border-b border-border/50 transition-colors hover:bg-muted/30 cursor-pointer"
                   >
                     <td className="px-4 py-3 text-sm font-medium text-foreground">
                       <div className="flex items-center gap-2">
@@ -168,13 +189,23 @@ export default function AdminInboxesPage() {
                       {new Date(inbox.lastEmail).toLocaleString()}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <Link
-                        href={`/admin/inboxes/${encodeURIComponent(inbox.email)}`}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                        title="View Inbox"
-                      >
-                        <CaretRight size={16} />
-                      </Link>
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleMonitor(inbox.email);
+                          }}
+                          disabled={isPending}
+                          className={`inline-flex h-8 items-center justify-center rounded-lg px-2 text-xs font-medium transition-colors disabled:opacity-50 ${
+                            inbox.isMonitored
+                              ? 'bg-primary/10 text-primary hover:bg-primary/20'
+                              : 'bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground'
+                          }`}
+                          title={inbox.isMonitored ? "Stop monitoring in base inbox" : "Monitor in base inbox"}
+                        >
+                          {inbox.isMonitored ? 'Monitored' : 'Monitor'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))

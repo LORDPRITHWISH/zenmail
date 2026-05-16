@@ -7,6 +7,7 @@ export interface IUser extends Document {
   emailVerified?: Date | null;
   image?: string | null;
   role: string;
+  monitoredEmails: string[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -18,6 +19,7 @@ const UserSchema = new Schema<IUser>(
     emailVerified: { type: Date, default: null },
     image: { type: String, default: null },
     role: { type: String, default: 'user' },
+    monitoredEmails: { type: [String], default: [] },
   },
   { timestamps: true }
 );

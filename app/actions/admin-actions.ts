@@ -101,6 +101,44 @@ export async function adminGetAllEmails(
   };
 }
 
+export async function adminGetEmail(id: string) {
+  await requireAdmin();
+  await connectDB();
+
+  const email = await Email.findById(id).populate('userId', 'name email image').lean();
+
+  if (!email) {
+    return { error: 'Email not found' };
+  }
+
+  const populated = email as typeof email & {
+    userId: { _id: mongoose.Types.ObjectId; name?: string; email?: string; image?: string };
+  };
+
+  return {
+    email: {
+      ...email,
+      id: email._id.toString(),
+      _id: email._id.toString(),
+      userId: populated.userId?._id?.toString() ?? email.userId?.toString() ?? null,
+      user: populated.userId
+        ? {
+            name: populated.userId.name ?? null,
+            email: populated.userId.email ?? null,
+            image: populated.userId.image ?? null,
+          }
+        : undefined,
+      attachments: (email.attachments || []).map((a: IAttachment) => ({
+        ...a,
+        id: a._id.toString(),
+        _id: a._id.toString(),
+      })),
+      createdAt: email.createdAt.toISOString(),
+      updatedAt: email.updatedAt.toISOString(),
+    },
+  };
+}
+
 export async function adminGetStats() {
   await requireAdmin();
   await connectDB();
@@ -128,7 +166,7 @@ export async function adminGetUsers() {
     { $group: { _id: '$userId', count: { $sum: 1 } } },
   ]);
   const countMap = new Map(
-    emailCounts.map((e) => [e._id.toString(), e.count as number])
+    emailCounts.map((e) => [e._id ? e._id.toString() : 'unassigned', e.count as number])
   );
 
   return users.map((u) => ({
@@ -136,8 +174,9 @@ export async function adminGetUsers() {
     id: u._id.toString(),
     _id: u._id.toString(),
     _count: { emails: countMap.get(u._id.toString()) ?? 0 },
-    createdAt: u.createdAt.toISOString(),
-    updatedAt: u.updatedAt.toISOString(),
+    isSuperAdmin: u.email === process.env.ADMIN_EMAIL,
+    createdAt: u.createdAt ? new Date(u.createdAt).toISOString() : new Date().toISOString(),
+    updatedAt: u.updatedAt ? new Date(u.updatedAt).toISOString() : new Date().toISOString(),
   }));
 }
 
@@ -145,14 +184,25 @@ export async function adminSetUserRole(userId: string, role: 'user' | 'admin') {
   await requireAdmin();
   await connectDB();
 
-  await User.findByIdAndUpdate(userId, { role });
+  const userToUpdate = await User.findById(userId);
+  if (!userToUpdate) throw new Error('User not found');
+
+  if (userToUpdate.email === process.env.ADMIN_EMAIL && role !== 'admin') {
+    throw new Error('The superadmin cannot be demoted.');
+  }
+
+  userToUpdate.role = role;
+  await userToUpdate.save();
 
   return { success: true };
 }
 
 export async function adminGetInboxes() {
-  await requireAdmin();
+  const session = await requireAdmin();
   await connectDB();
+
+  const user = await User.findById(session.user.id).select('monitoredEmails').lean();
+  const monitoredEmails = (user as { monitoredEmails?: string[] })?.monitoredEmails || [];
 
   const inboxes = await Email.aggregate([
     { $unwind: "$to" },
@@ -174,5 +224,26 @@ export async function adminGetInboxes() {
     count: i.count as number,
     unreadCount: i.unreadCount as number,
     lastEmail: (i.lastEmail as Date).toISOString(),
+    isMonitored: monitoredEmails.includes(i._id as string),
   }));
+}
+
+export async function adminToggleMonitorInbox(email: string) {
+  const session = await requireAdmin();
+  await connectDB();
+
+  const user = await User.findById(session.user.id);
+  if (!user) throw new Error('User not found');
+
+  const emails = user.monitoredEmails || [];
+  const isMonitored = emails.includes(email);
+
+  if (isMonitored) {
+    user.monitoredEmails = emails.filter((e: string) => e !== email);
+  } else {
+    user.monitoredEmails = [...emails, email];
+  }
+  
+  await user.save();
+  return { success: true, isMonitored: !isMonitored };
 }

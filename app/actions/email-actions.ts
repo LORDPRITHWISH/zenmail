@@ -3,6 +3,7 @@
 import { auth } from '@/lib/auth';
 import { connectDB } from '@/lib/mongoose';
 import { Email, IAttachment } from '@/models/Email';
+import { User } from '@/models/User';
 import { EMAILS_PER_PAGE } from '@/lib/constants';
 import mongoose from 'mongoose';
 
@@ -19,10 +20,20 @@ export async function getEmails(
   await connectDB();
   const skip = (page - 1) * EMAILS_PER_PAGE;
 
+  const user = await User.findById(session.user.id).select('role monitoredEmails').lean();
+  const baseUserCondition = { userId: new mongoose.Types.ObjectId(session.user.id) };
+
   // Build query
-  const query: Record<string, unknown> = {
-    userId: new mongoose.Types.ObjectId(session.user.id),
-  };
+  const query: Record<string, any> = {};
+
+  if (folder === 'inbox' && (user as any)?.role === 'admin' && (user as any)?.monitoredEmails?.length > 0) {
+    query.$or = [
+      baseUserCondition,
+      { to: { $in: (user as any).monitoredEmails } }
+    ];
+  } else {
+    query.userId = baseUserCondition.userId;
+  }
 
   if (folder === 'starred') {
     query.isStarred = true;
@@ -32,11 +43,19 @@ export async function getEmails(
   }
 
   if (search) {
-    query.$or = [
-      { subject: { $regex: search, $options: 'i' } },
-      { from: { $regex: search, $options: 'i' } },
-      { text: { $regex: search, $options: 'i' } },
-    ];
+    const searchCondition = {
+      $or: [
+        { subject: { $regex: search, $options: 'i' } },
+        { from: { $regex: search, $options: 'i' } },
+        { text: { $regex: search, $options: 'i' } },
+      ]
+    };
+    if (query.$or) {
+      query.$and = [{ $or: query.$or }, searchCondition];
+      delete query.$or;
+    } else {
+      query.$or = searchCondition.$or;
+    }
   }
 
   const [emails, total] = await Promise.all([
@@ -75,10 +94,20 @@ export async function getEmail(id: string) {
 
   await connectDB();
 
-  const email = await Email.findOne({
-    _id: new mongoose.Types.ObjectId(id),
-    userId: new mongoose.Types.ObjectId(session.user.id),
-  }).lean();
+  const user = await User.findById(session.user.id).select('role monitoredEmails').lean();
+  
+  const query: any = { _id: new mongoose.Types.ObjectId(id) };
+
+  if ((user as any)?.role === 'admin' && (user as any)?.monitoredEmails?.length > 0) {
+    query.$or = [
+      { userId: new mongoose.Types.ObjectId(session.user.id) },
+      { to: { $in: (user as any).monitoredEmails } }
+    ];
+  } else {
+    query.userId = new mongoose.Types.ObjectId(session.user.id);
+  }
+
+  const email = await Email.findOne(query).lean();
 
   if (!email) {
     return { error: 'Email not found' };
@@ -210,17 +239,29 @@ export async function getUnreadCounts() {
 
   await connectDB();
 
+  const user = await User.findById(session.user.id).select('role monitoredEmails').lean();
   const userId = new mongoose.Types.ObjectId(session.user.id);
   const folders = ['inbox', 'sent', 'drafts', 'spam', 'trash'];
   const counts: Record<string, number> = {};
 
   await Promise.all(
     folders.map(async (folder) => {
-      counts[folder] = await Email.countDocuments({
-        userId,
-        folder,
-        isRead: false,
-      });
+      let query: any = { folder, isRead: false };
+      
+      if (folder === 'inbox' && (user as any)?.role === 'admin' && (user as any)?.monitoredEmails?.length > 0) {
+        query = {
+          folder,
+          isRead: false,
+          $or: [
+            { userId },
+            { to: { $in: (user as any).monitoredEmails } }
+          ]
+        };
+      } else {
+        query.userId = userId;
+      }
+      
+      counts[folder] = await Email.countDocuments(query);
     })
   );
 

@@ -9,9 +9,9 @@ interface UserItem {
   name: string | null;
   email: string;
   image: string | null;
-  role: string;
   createdAt: string;
   _count: { emails: number };
+  isSuperAdmin?: boolean;
 }
 
 export default function AdminUsersPage() {
@@ -129,8 +129,9 @@ export default function AdminUsersPage() {
                         e.target.value as 'user' | 'admin'
                       )
                     }
-                    disabled={isPending}
+                    disabled={isPending || user.isSuperAdmin}
                     className="h-8 rounded-md border border-border bg-background px-2 text-xs focus:outline-none disabled:opacity-50"
+                    title={user.isSuperAdmin ? "Superadmin cannot be demoted" : "Change role"}
                   >
                     <option value="user">User</option>
                     <option value="admin">Admin</option>

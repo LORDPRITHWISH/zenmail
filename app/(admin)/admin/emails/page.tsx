@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useState, useTransition, useCallback } from 'react';
 import { adminGetAllEmails } from '@/app/actions/admin-actions';
+import { AdminEmailView } from './admin-email-view';
 import {
   MagnifyingGlass,
   Funnel,
@@ -27,12 +28,13 @@ export default function AdminEmailsPage() {
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [page, setPage] = useState(1);
+  const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [folderFilter, setFolderFilter] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isPending, startTransition] = useTransition();
 
-  const fetchEmails = (p: number = page) => {
+  const fetchEmails = useCallback((p: number = page) => {
     startTransition(async () => {
       setIsLoading(true);
       const result = await adminGetAllEmails(p, {
@@ -44,11 +46,11 @@ export default function AdminEmailsPage() {
       setTotalPages(result.totalPages);
       setIsLoading(false);
     });
-  };
+  }, [page, search, folderFilter]);
 
   useEffect(() => {
     fetchEmails(1);
-  }, [folderFilter]);
+  }, [folderFilter, fetchEmails]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,9 +58,16 @@ export default function AdminEmailsPage() {
     fetchEmails(1);
   };
 
-  function extractName(from: string): string {
-    const match = from.match(/^"?(.+?)"?\s*<.+>$/);
-    return match ? match[1] : from.split('@')[0];
+  if (selectedEmailId) {
+    return (
+      <div>
+        <h1 className="mb-6 text-2xl font-bold text-foreground">Email Details</h1>
+        <AdminEmailView
+          emailId={selectedEmailId}
+          onBack={() => setSelectedEmailId(null)}
+        />
+      </div>
+    );
   }
 
   return (
@@ -149,11 +158,12 @@ export default function AdminEmailsPage() {
                 emails.map((email) => (
                   <tr
                     key={email.id}
-                    className={`border-b border-border/50 transition-colors hover:bg-muted/30 ${
+                    onClick={() => setSelectedEmailId(email.id)}
+                    className={`border-b border-border/50 transition-colors hover:bg-muted/30 cursor-pointer ${
                       !email.isRead ? 'bg-primary/[0.02]' : ''
                     }`}
                   >
-                    <td className="max-w-[160px] truncate px-4 py-3 text-sm">
+                    <td className="max-w-[240px] truncate px-4 py-3 text-sm">
                       <span
                         className={
                           email.isRead
@@ -161,7 +171,7 @@ export default function AdminEmailsPage() {
                             : 'font-medium text-foreground'
                         }
                       >
-                        {extractName(email.from)}
+                        {email.from}
                       </span>
                     </td>
                     <td className="max-w-[160px] truncate px-4 py-3 text-sm text-foreground/70">

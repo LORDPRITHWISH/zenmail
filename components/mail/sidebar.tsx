@@ -95,7 +95,7 @@ export function MailSidebar() {
       {/* Compose button */}
       <div className="p-3">
         <button
-          onClick={openCompose}
+          onClick={() => openCompose()}
           className={`flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-md shadow-primary/20 transition-all duration-200 hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/30 active:scale-[0.97] ${
             sidebarCollapsed ? 'w-full' : 'w-full'
           }`}

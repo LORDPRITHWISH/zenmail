@@ -12,6 +12,7 @@ interface UserItem {
   createdAt: string;
   _count: { emails: number };
   isSuperAdmin?: boolean;
+  role: string;
 }
 
 export default function AdminUsersPage() {

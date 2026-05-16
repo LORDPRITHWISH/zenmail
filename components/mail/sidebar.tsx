@@ -72,26 +72,8 @@ export function MailSidebar() {
       <div className="flex h-14 items-center justify-between border-b border-border px-3">
         {!sidebarCollapsed && (
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                className="text-primary"
-              >
-                <path
-                  d="M2 6C2 4.89543 2.89543 4 4 4H20C21.1046 4 22 4.89543 22 6V18C22 19.1046 21.1046 20 20 20H4C2.89543 20 2 19.1046 2 18V6Z"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                />
-                <path
-                  d="M2 6L12 13L22 6"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinejoin="round"
-                />
-              </svg>
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl overflow-hidden shadow-sm shadow-primary/20">
+              <img src="/zenmail.png" alt="ZenMail Logo" className="w-full h-full object-cover" />
             </div>
             <span className="text-sm font-bold tracking-tight text-sidebar-foreground">
               ZenMail

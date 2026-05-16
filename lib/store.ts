@@ -39,7 +39,8 @@ interface MailState {
 
   // Compose
   isComposeOpen: boolean;
-  openCompose: () => void;
+  composeFrom?: string;
+  openCompose: (fromAddress?: string) => void;
   closeCompose: () => void;
 
   // Reply / Forward state
@@ -81,8 +82,9 @@ export const useMailStore = create<MailState>((set, get) => ({
   setEmails: (emails) => set({ emails }),
 
   isComposeOpen: false,
-  openCompose: () => set({ isComposeOpen: true, composeMode: 'new', composeReplyTo: null }),
-  closeCompose: () => set({ isComposeOpen: false, composeReplyTo: null }),
+  composeFrom: undefined,
+  openCompose: (fromAddress) => set({ isComposeOpen: true, composeMode: 'new', composeReplyTo: null, composeFrom: fromAddress }),
+  closeCompose: () => set({ isComposeOpen: false, composeReplyTo: null, composeFrom: undefined }),
 
   composeMode: 'new',
   composeReplyTo: null,

@@ -1,22 +1,38 @@
 'use client';
 
+import { useSession } from 'next-auth/react';
 import { useMailStore } from '@/lib/store';
 import {
   MagnifyingGlass,
   ArrowsClockwise,
   Moon,
   Sun,
+  Copy,
+  Check,
 } from '@phosphor-icons/react';
 import { useTheme } from 'next-themes';
 import { useCallback, useState, useTransition } from 'react';
 import { getEmails, getUnreadCounts } from '@/app/actions/email-actions';
 
 export function MailHeader() {
+  const { data: session } = useSession();
   const { searchQuery, setSearchQuery, currentFolder, setEmails, setIsLoading, setUnreadCounts } =
     useMailStore();
   const { resolvedTheme, setTheme } = useTheme();
   const [isPending, startTransition] = useTransition();
   const [localSearch, setLocalSearch] = useState(searchQuery);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyEmail = () => {
+    if (session?.user?.email) {
+      const zenuxMail = session.user.email.split('@')[0] + '@zenux.live';
+      navigator.clipboard.writeText(zenuxMail);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const displayMail = session?.user?.email ? session.user.email.split('@')[0] + '@zenux.live' : '';
 
   const handleRefresh = useCallback(() => {
     startTransition(async () => {
@@ -70,7 +86,26 @@ export function MailHeader() {
       </form>
 
       {/* Actions */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-2">
+        {displayMail && (
+          <div className="hidden sm:flex items-center gap-1 rounded-lg border border-border bg-muted/30 px-3 py-1.5 text-sm text-foreground shadow-sm">
+            <span className="max-w-[200px] truncate text-xs font-medium text-muted-foreground">
+              {displayMail}
+            </span>
+            <button
+              onClick={handleCopyEmail}
+              className="ml-1 flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              title="Copy email address"
+            >
+              {copied ? (
+                <Check size={14} className="text-green-500" />
+              ) : (
+                <Copy size={14} />
+              )}
+            </button>
+          </div>
+        )}
+
         <button
           onClick={handleRefresh}
           disabled={isPending}

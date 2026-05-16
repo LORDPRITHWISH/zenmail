@@ -35,6 +35,7 @@ export function ComposeDialog() {
     closeCompose,
     composeMode,
     composeReplyTo,
+    composeFrom,
   } = useMailStore();
 
   const [to, setTo] = useState<string[]>([]);
@@ -42,7 +43,7 @@ export function ComposeDialog() {
   const [bcc, setBcc] = useState<string[]>([]);
   const [subject, setSubject] = useState('');
   const [html, setHtml] = useState('');
-  const [fromAddress, setFromAddress] = useState('');
+  const [fromAddress, setFromAddress] = useState(composeFrom || '');
   const [showCcBcc, setShowCcBcc] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [attachments, setAttachments] = useState<AttachmentFile[]>([]);
@@ -98,11 +99,11 @@ export function ComposeDialog() {
       setBcc([]);
       setSubject('');
       setHtml('');
-      setFromAddress('');
+      setFromAddress(composeFrom || '');
       setAttachments([]);
       setShowCcBcc(false);
     }
-  }, [composeMode, composeReplyTo, session?.user?.email]);
+  }, [composeMode, composeReplyTo, session?.user?.email, composeFrom]);
 
   // Initialize when compose opens
   useState(() => {
@@ -185,7 +186,7 @@ export function ComposeDialog() {
     setBcc([]);
     setSubject('');
     setHtml('');
-    setFromAddress('');
+    setFromAddress(composeFrom || '');
     setAttachments([]);
     setShowCcBcc(false);
   };

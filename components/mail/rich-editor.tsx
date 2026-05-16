@@ -41,6 +41,7 @@ export function RichEditor({
   placeholder = 'Compose your email...',
 }: RichEditorProps) {
   const editor = useEditor({
+    immediatelyRender: false,
     extensions: [
       StarterKit.configure({
         heading: { levels: [1, 2, 3] },

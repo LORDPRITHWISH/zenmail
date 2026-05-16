@@ -210,20 +210,8 @@ export default function LandingPage() {
       <nav className="landing-nav">
         <div className="landing-nav-inner">
           <div className="landing-logo">
-            <div className="landing-logo-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M2 6C2 4.89543 2.89543 4 4 4H20C21.1046 4 22 4.89543 22 6V18C22 19.1046 21.1046 20 20 20H4C2.89543 20 2 19.1046 2 18V6Z"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                />
-                <path
-                  d="M2 6L12 13L22 6"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinejoin="round"
-                />
-              </svg>
+            <div className="landing-logo-icon overflow-hidden rounded-md">
+              <img src="/zenmail.png" alt="ZenMail Logo" className="w-full h-full object-cover" />
             </div>
             <span className="landing-logo-text">ZenMail</span>
           </div>
@@ -306,7 +294,7 @@ export default function LandingPage() {
                   />
                 </svg>
               )}
-              {loading ? "Redirecting…" : "Continue with Google"}
+              {loading ? "Redirecting…" : "Get started"}
             </button>
             <a href="#features" className="landing-btn-ghost">
               See features
@@ -548,20 +536,8 @@ export default function LandingPage() {
       <footer className="landing-footer">
         <div className="landing-footer-inner">
           <div className="landing-logo">
-            <div className="landing-logo-icon">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M2 6C2 4.89543 2.89543 4 4 4H20C21.1046 4 22 4.89543 22 6V18C22 19.1046 21.1046 20 20 20H4C2.89543 20 2 19.1046 2 18V6Z"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                />
-                <path
-                  d="M2 6L12 13L22 6"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinejoin="round"
-                />
-              </svg>
+            <div className="landing-logo-icon overflow-hidden rounded-sm" style={{ width: 16, height: 16 }}>
+              <img src="/zenmail.png" alt="ZenMail Logo" className="w-full h-full object-cover" />
             </div>
             <span className="landing-logo-text" style={{ fontSize: "0.9rem" }}>
               ZenMail

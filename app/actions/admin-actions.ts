@@ -79,7 +79,7 @@ export async function adminGetAllEmails(
         ...e,
         id: e._id.toString(),
         _id: e._id.toString(),
-        userId: populated.userId?._id?.toString() ?? e.userId.toString(),
+        userId: populated.userId?._id?.toString() ?? e.userId?.toString() ?? null,
         user: populated.userId
           ? {
               name: populated.userId.name ?? null,
@@ -148,4 +148,31 @@ export async function adminSetUserRole(userId: string, role: 'user' | 'admin') {
   await User.findByIdAndUpdate(userId, { role });
 
   return { success: true };
+}
+
+export async function adminGetInboxes() {
+  await requireAdmin();
+  await connectDB();
+
+  const inboxes = await Email.aggregate([
+    { $unwind: "$to" },
+    {
+      $group: {
+        _id: "$to",
+        count: { $sum: 1 },
+        unreadCount: {
+          $sum: { $cond: [{ $eq: ["$isRead", false] }, 1, 0] },
+        },
+        lastEmail: { $max: "$createdAt" },
+      },
+    },
+    { $sort: { lastEmail: -1 } },
+  ]);
+
+  return inboxes.map((i) => ({
+    email: i._id as string,
+    count: i.count as number,
+    unreadCount: i.unreadCount as number,
+    lastEmail: (i.lastEmail as Date).toISOString(),
+  }));
 }

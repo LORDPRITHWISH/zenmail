@@ -18,7 +18,7 @@ interface Email {
   folder: string;
   isRead: boolean;
   createdAt: string;
-  user: { name: string | null; email: string };
+  user?: { name: string | null; email: string | null };
   attachments: { id: string }[];
 }
 
@@ -192,7 +192,7 @@ export default function AdminEmailsPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-sm text-muted-foreground">
-                      {email.user.name || email.user.email}
+                      {email.user?.name || email.user?.email || 'Unregistered'}
                     </td>
                     <td className="px-4 py-3 text-sm text-muted-foreground">
                       {new Date(email.createdAt).toLocaleDateString()}

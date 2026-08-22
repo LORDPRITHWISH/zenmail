@@ -5,6 +5,8 @@ import { SessionProvider } from 'next-auth/react';
 import { MailSidebar } from '@/components/mail/sidebar';
 import { MailHeader } from '@/components/mail/header';
 import { ComposeDialog } from '@/components/mail/compose-dialog';
+import { SendToast } from '@/components/mail/send-toast';
+import { KeyboardShortcuts } from '@/components/mail/keyboard-shortcuts';
 import { useMailStore } from '@/lib/store';
 import { getUnreadCounts } from '@/app/actions/email-actions';
 import { getLabels } from '@/app/actions/label-actions';
@@ -15,7 +17,8 @@ export default function MailLayout({
   children: React.ReactNode;
 }) {
   const [mounted, setMounted] = useState(false);
-  const { sidebarCollapsed, setUnreadCounts, setLabels } = useMailStore();
+  const { sidebarCollapsed, setUnreadCounts, setLabels, isComposeOpen, composeKey } =
+    useMailStore();
 
   useEffect(() => {
     setMounted(true);
@@ -56,7 +59,9 @@ export default function MailLayout({
           <MailHeader />
           <main className="flex-1 overflow-hidden">{children}</main>
         </div>
-        <ComposeDialog />
+        {isComposeOpen && <ComposeDialog key={composeKey} />}
+        <SendToast />
+        <KeyboardShortcuts />
       </div>
     </SessionProvider>
   );

@@ -84,10 +84,12 @@ export function MailHeader() {
             className="absolute left-3 text-muted-foreground/50"
           />
           <input
+            id="zenmail-search"
             type="text"
-            placeholder="Search emails..."
+            placeholder="Search emails…   /"
             value={localSearch}
             onChange={(e) => setLocalSearch(e.target.value)}
+            onKeyDown={(e) => e.key === 'Escape' && e.currentTarget.blur()}
             className="h-9 w-full rounded-xl border border-border bg-muted/50 pl-9 pr-4 text-sm text-foreground placeholder:text-muted-foreground/50 transition-colors focus:border-primary/30 focus:bg-background focus:outline-none focus:ring-2 focus:ring-primary/10"
           />
         </div>

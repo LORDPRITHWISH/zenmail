@@ -1,8 +1,8 @@
 'use client';
 
 import { EmailItem, useMailStore } from '@/lib/store';
-import { toggleStar } from '@/app/actions/email-actions';
-import { Star, Paperclip } from '@phosphor-icons/react';
+import { getEmail, toggleStar } from '@/app/actions/email-actions';
+import { Star, Paperclip, ClockCountdown, ChatsCircle } from '@phosphor-icons/react';
 import { useRouter } from 'next/navigation';
 import { useTransition } from 'react';
 
@@ -80,14 +80,21 @@ export function EmailListItem({
   onSelect,
 }: EmailListItemProps) {
   const router = useRouter();
-  const { selectedIds, toggleSelected, labels } = useMailStore();
+  const { selectedIds, toggleSelected, labels, openDraft } = useMailStore();
   const [isPending, startTransition] = useTransition();
   const isChecked = selectedIds.has(email.id);
   const emailLabels = email.labels
     ?.map((id) => labels.find((l) => l.id === id))
     .filter((l): l is NonNullable<typeof l> => Boolean(l));
 
-  const senderName = extractName(email.from);
+  const isDraft = email.folder === 'drafts';
+  const isScheduled = email.folder === 'scheduled';
+  // A draft shows who it's going to; everything else shows who it came from.
+  const senderName = isDraft || isScheduled
+    ? email.to.length > 0
+      ? `To: ${email.to.map(extractName).join(', ')}`
+      : 'To: (no recipient)'
+    : extractName(email.from);
   const snippet = email.text || (email.html ? stripHtml(email.html) : '');
 
   const handleStarClick = (e: React.MouseEvent) => {
@@ -104,11 +111,36 @@ export function EmailListItem({
 
   const handleClick = () => {
     onSelect();
+
+    // Opening a draft means resuming it, not reading it.
+    if (isDraft) {
+      startTransition(async () => {
+        const result = await getEmail(email.id);
+        const full = result.email as Record<string, unknown> | undefined;
+        openDraft({
+          id: email.id,
+          to: email.to,
+          cc: email.cc,
+          bcc: email.bcc,
+          subject: email.subject,
+          html: (full?.html as string) || '',
+          attachments: ((full?.attachments as Record<string, unknown>[]) || []).map((a) => ({
+            filename: a.filename as string,
+            contentType: a.contentType as string,
+            size: a.size as number,
+            content: (a.content as string) || '',
+          })),
+        });
+      });
+      return;
+    }
+
     router.push(`/email/${email.id}`);
   };
 
   return (
     <div
+      data-email-id={email.id}
       onClick={handleClick}
       className={`group flex cursor-pointer items-center gap-3 border-b border-border/50 px-4 py-3 transition-all duration-150 ${
         isSelected
@@ -177,8 +209,24 @@ export function EmailListItem({
           >
             {senderName}
           </span>
+          {(email.threadCount ?? 1) > 1 && (
+            <span
+              className="flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground"
+              title={`${email.threadCount} messages in this conversation`}
+            >
+              <ChatsCircle size={12} />
+              {email.threadCount}
+            </span>
+          )}
           <span className="shrink-0 text-xs text-muted-foreground">
-            {formatDate(email.createdAt)}
+            {isScheduled && email.scheduledAt ? (
+              <span className="flex items-center gap-1 text-primary">
+                <ClockCountdown size={12} />
+                {formatDate(email.scheduledAt)}
+              </span>
+            ) : (
+              formatDate(email.createdAt)
+            )}
           </span>
         </div>
         <p

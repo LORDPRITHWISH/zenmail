@@ -24,6 +24,7 @@ export interface IEmail extends Document {
   text?: string;
 
   folder: string;
+  scheduledAt?: Date | null;
   isRead: boolean;
   isStarred: boolean;
   labels: string[];
@@ -66,6 +67,7 @@ const EmailSchema = new Schema<IEmail>(
     text: { type: String },
 
     folder: { type: String, default: 'inbox' },
+    scheduledAt: { type: Date, default: null },
     isRead: { type: Boolean, default: false },
     isStarred: { type: Boolean, default: false },
     labels: { type: [String], default: [] },
@@ -87,5 +89,6 @@ EmailSchema.index({ userId: 1, folder: 1 });
 EmailSchema.index({ userId: 1, isRead: 1 });
 EmailSchema.index({ threadId: 1 });
 EmailSchema.index({ pendingRecipientEmail: 1 }); // fast lookup on user sign-up
+EmailSchema.index({ folder: 1, scheduledAt: 1 }); // due-scheduled sweep
 
 export const Email = models.Email || model<IEmail>('Email', EmailSchema);

@@ -1,7 +1,16 @@
 'use client';
 
-import { useState, useRef, KeyboardEvent } from 'react';
+import { useState, useRef, useEffect, useId, KeyboardEvent } from 'react';
+import { getContacts } from '@/app/actions/email-actions';
 import { X } from '@phosphor-icons/react';
+
+// Fetched once per page load and shared by every recipient field.
+let contactsPromise: Promise<string[]> | null = null;
+
+function loadContacts(): Promise<string[]> {
+  contactsPromise ??= getContacts().then((r) => r.contacts);
+  return contactsPromise;
+}
 
 interface RecipientInputProps {
   label: string;
@@ -17,7 +26,20 @@ export function RecipientInput({
   placeholder = 'Add recipient...',
 }: RecipientInputProps) {
   const [inputValue, setInputValue] = useState('');
+  const [contacts, setContacts] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listId = useId();
+
+  // The browser's own datalist handles filtering and the dropdown UI.
+  useEffect(() => {
+    let cancelled = false;
+    loadContacts().then((list) => {
+      if (!cancelled) setContacts(list);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const addRecipient = (value: string) => {
     const email = value.trim().toLowerCase();
@@ -81,6 +103,8 @@ export function RecipientInput({
         <input
           ref={inputRef}
           type="text"
+          list={listId}
+          autoComplete="off"
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
@@ -91,6 +115,13 @@ export function RecipientInput({
           placeholder={recipients.length === 0 ? placeholder : ''}
           className="min-w-[120px] flex-1 bg-transparent py-1 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none"
         />
+        <datalist id={listId}>
+          {contacts
+            .filter((c) => !recipients.includes(c))
+            .map((c) => (
+              <option key={c} value={c} />
+            ))}
+        </datalist>
       </div>
     </div>
   );

@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth';
 import { connectDB } from '@/lib/mongoose';
 import { User } from '@/models/User';
 import { Email, IAttachment } from '@/models/Email';
+import { escapeRegex } from '@/lib/constants';
 import mongoose from 'mongoose';
 
 async function requireAdmin() {
@@ -41,15 +42,16 @@ export async function adminGetAllEmails(
   if (filters?.isRead !== undefined) query.isRead = filters.isRead;
 
   if (filters?.search) {
+    const safe = escapeRegex(filters.search);
     query.$or = [
-      { subject: { $regex: filters.search, $options: 'i' } },
-      { from: { $regex: filters.search, $options: 'i' } },
-      { text: { $regex: filters.search, $options: 'i' } },
+      { subject: { $regex: safe, $options: 'i' } },
+      { from: { $regex: safe, $options: 'i' } },
+      { text: { $regex: safe, $options: 'i' } },
     ];
   }
 
   if (filters?.from) {
-    query.from = { $regex: filters.from, $options: 'i' };
+    query.from = { $regex: escapeRegex(filters.from), $options: 'i' };
   }
 
   if (filters?.to) {

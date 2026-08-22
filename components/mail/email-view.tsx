@@ -1,12 +1,14 @@
 "use client"
 
-import { useEffect, useRef, useState, useTransition, useCallback } from "react"
+import { useEffect, useRef, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import {
   getEmail,
+  getThread,
   toggleStar,
   toggleRead,
   deleteEmails,
+  cancelScheduled,
   getUnreadCounts,
 } from "@/app/actions/email-actions"
 import { toggleEmailLabel } from "@/app/actions/label-actions"
@@ -15,7 +17,6 @@ import {
   ArrowLeft,
   Star,
   Trash,
-  Archive,
   ArrowBendUpLeft,
   ArrowBendUpRight,
   ArrowsClockwise,
@@ -23,10 +24,24 @@ import {
   DownloadSimple,
   EnvelopeSimple,
   Tag,
+  CaretDown,
+  CaretRight,
+  ClockCountdown,
 } from "@phosphor-icons/react"
 
 interface EmailViewProps {
   emailId: string
+}
+
+interface ThreadMessage {
+  id: string
+  from: string
+  to: string[]
+  subject: string
+  text?: string
+  html?: string
+  folder: string
+  createdAt: string
 }
 
 function formatFullDate(dateStr: string) {
@@ -65,6 +80,59 @@ function formatFileSize(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1) + " MB"
 }
 
+function ThreadRow({
+  message,
+  isOpen,
+  onToggle,
+}: {
+  message: ThreadMessage
+  isOpen: boolean
+  onToggle: () => void
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-muted/20">
+      <button
+        onClick={onToggle}
+        className="flex w-full items-center gap-3 px-4 py-2.5 text-left"
+      >
+        {isOpen ? (
+          <CaretDown size={14} className="shrink-0 text-muted-foreground" />
+        ) : (
+          <CaretRight size={14} className="shrink-0 text-muted-foreground" />
+        )}
+        <span className="shrink-0 text-sm font-medium text-foreground">
+          {extractName(message.from)}
+        </span>
+        {!isOpen && (
+          <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+            {(message.text || message.html?.replace(/<[^>]*>/g, "") || "").trim().slice(0, 120)}
+          </span>
+        )}
+        <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+          {new Date(message.createdAt).toLocaleDateString([], {
+            month: "short",
+            day: "numeric",
+          })}
+        </span>
+      </button>
+      {isOpen && (
+        <div className="border-t border-border px-4 py-3">
+          {message.html ? (
+            <div
+              className="prose prose-sm dark:prose-invert max-w-none"
+              dangerouslySetInnerHTML={{ __html: message.html }}
+            />
+          ) : (
+            <pre className="whitespace-pre-wrap text-sm text-foreground/80">
+              {message.text}
+            </pre>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function EmailView({ emailId }: EmailViewProps) {
   const router = useRouter()
   const { openReply, labels, patchEmail, setUnreadCounts } = useMailStore()
@@ -72,6 +140,14 @@ export function EmailView({ emailId }: EmailViewProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [isPending, startTransition] = useTransition()
   const [isLabelMenuOpen, setIsLabelMenuOpen] = useState(false)
+  // Stored with the id it belongs to, so a previous email's thread can never
+  // flash on screen while the new one loads.
+  const [loadedThread, setLoadedThread] = useState<{ id: string; messages: ThreadMessage[] }>({
+    id: '',
+    messages: [],
+  })
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [cancelError, setCancelError] = useState<string | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -88,6 +164,19 @@ export function EmailView({ emailId }: EmailViewProps) {
       setIsLoading(false)
     })
   }, [emailId, patchEmail, setUnreadCounts])
+
+  // Pull in the rest of the conversation, if this message is part of one.
+  useEffect(() => {
+    const threadId = email?.threadId as string | undefined
+    if (!threadId) return
+    let cancelled = false
+    getThread(threadId, emailId).then((result) => {
+      if (!cancelled) setLoadedThread({ id: emailId, messages: result.messages })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [email, emailId])
 
   // Open links in the email body in a new tab
   useEffect(() => {
@@ -108,6 +197,15 @@ export function EmailView({ emailId }: EmailViewProps) {
         const counts = await getUnreadCounts()
         if (counts.counts) setUnreadCounts(counts.counts)
       }
+    })
+  }
+
+  const toggleExpanded = (id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
     })
   }
 
@@ -150,6 +248,11 @@ export function EmailView({ emailId }: EmailViewProps) {
     (email.attachments as Array<Record<string, unknown>>) || []
   const emailLabelIds = (email.labels as string[]) || []
   const emailLabels = labels.filter((l) => emailLabelIds.includes(l.id))
+
+  const thread = loadedThread.id === emailId ? loadedThread.messages : []
+  const openedAt = new Date(email.createdAt as string).getTime()
+  const earlier = thread.filter((m) => new Date(m.createdAt).getTime() <= openedAt)
+  const later = thread.filter((m) => new Date(m.createdAt).getTime() > openedAt)
 
   return (
     <div className="flex h-full flex-col">
@@ -284,6 +387,49 @@ export function EmailView({ emailId }: EmailViewProps) {
           </div>
         )}
 
+        {/* Held for scheduled delivery */}
+        {email.folder === "scheduled" && email.scheduledAt ? (
+          <div className="mb-4 flex items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-2.5">
+            <ClockCountdown size={18} className="shrink-0 text-primary" />
+            <span className="flex-1 text-sm text-foreground">
+              Scheduled to send {formatFullDate(email.scheduledAt as string)}
+            </span>
+            <button
+              onClick={() =>
+                startTransition(async () => {
+                  const result = await cancelScheduled(emailId)
+                  if (result.error) setCancelError(result.error)
+                  else router.push("/drafts")
+                })
+              }
+              disabled={isPending}
+              className="rounded-lg px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-50"
+            >
+              Cancel send
+            </button>
+          </div>
+        ) : null}
+
+        {cancelError && (
+          <div className="mb-4 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-2.5 text-sm text-destructive">
+            {cancelError}
+          </div>
+        )}
+
+        {/* Earlier messages in this conversation */}
+        {earlier.length > 0 && (
+          <div className="mb-4 space-y-2">
+            {earlier.map((m) => (
+              <ThreadRow
+                key={m.id}
+                message={m}
+                isOpen={expanded.has(m.id)}
+                onToggle={() => toggleExpanded(m.id)}
+              />
+            ))}
+          </div>
+        )}
+
         {/* Sender info */}
         <div className="mb-6 flex items-start gap-4">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
@@ -359,12 +505,32 @@ export function EmailView({ emailId }: EmailViewProps) {
                       {formatFileSize(att.size as number)}
                     </p>
                   </div>
-                  <button className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground">
+                  <a
+                    href={`data:${(att.contentType as string) || "application/octet-stream"};base64,${att.content as string}`}
+                    download={att.filename as string}
+                    onClick={(e) => e.stopPropagation()}
+                    className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+                    title={`Download ${att.filename as string}`}
+                  >
                     <DownloadSimple size={16} />
-                  </button>
+                  </a>
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Later replies in this conversation */}
+        {later.length > 0 && (
+          <div className="mt-4 space-y-2">
+            {later.map((m) => (
+              <ThreadRow
+                key={m.id}
+                message={m}
+                isOpen={expanded.has(m.id)}
+                onToggle={() => toggleExpanded(m.id)}
+              />
+            ))}
           </div>
         )}
 

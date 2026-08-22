@@ -6,7 +6,11 @@ import {
   markAsRead,
   markAsUnread,
   moveToFolder,
+  emptyTrash,
+  markFolderRead,
 } from '@/app/actions/email-actions';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { useState } from 'react';
 import {
   Trash,
   Archive,
@@ -19,14 +23,17 @@ import {
 import { useTransition } from 'react';
 
 interface EmailToolbarProps {
+  folder?: string;
   onRefresh: () => void;
 }
 
-export function EmailToolbar({ onRefresh }: EmailToolbarProps) {
-  const { selectedIds, emails, selectAll, clearSelection } = useMailStore();
+export function EmailToolbar({ folder, onRefresh }: EmailToolbarProps) {
+  const { selectedIds, emails, selectAll, clearSelection, unreadCounts } = useMailStore();
   const [isPending, startTransition] = useTransition();
+  const [confirmEmptyTrash, setConfirmEmptyTrash] = useState(false);
   const hasSelection = selectedIds.size > 0;
   const allSelected = selectedIds.size === emails.length && emails.length > 0;
+  const folderUnread = folder ? unreadCounts[folder] ?? 0 : 0;
 
   const handleAction = (action: () => Promise<unknown>) => {
     startTransition(async () => {
@@ -122,6 +129,42 @@ export function EmailToolbar({ onRefresh }: EmailToolbarProps) {
           </button>
         </>
       )}
+
+      <div className="flex-1" />
+
+      {!hasSelection && folder === 'trash' && emails.length > 0 && (
+        <button
+          onClick={() => setConfirmEmptyTrash(true)}
+          disabled={isPending}
+          className="rounded-lg px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+        >
+          Empty trash
+        </button>
+      )}
+
+      {!hasSelection && folderUnread > 0 && (
+        <button
+          onClick={() => handleAction(() => markFolderRead(folder!))}
+          disabled={isPending}
+          className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+        >
+          <EnvelopeOpen size={14} />
+          Mark all read
+        </button>
+      )}
+
+      <ConfirmDialog
+        open={confirmEmptyTrash}
+        title="Empty the trash?"
+        description="Every email in the trash will be permanently deleted. This can't be undone."
+        confirmLabel="Delete all"
+        destructive
+        onConfirm={() => {
+          setConfirmEmptyTrash(false);
+          handleAction(() => emptyTrash());
+        }}
+        onCancel={() => setConfirmEmptyTrash(false)}
+      />
     </div>
   );
 }

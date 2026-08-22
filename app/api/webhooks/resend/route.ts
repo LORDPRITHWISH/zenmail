@@ -1,19 +1,36 @@
 import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
+import { Webhook } from 'svix';
 import { connectDB } from '@/lib/mongoose';
 import { User } from '@/models/User';
 import { Email } from '@/models/Email';
+import { Rule, IRule } from '@/models/Rule';
+import { routeWithRules } from '@/lib/rules';
 import mongoose from 'mongoose';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function POST(request: Request) {
-  let body: Record<string, unknown>;
+  const secret = process.env.RESEND_WEBHOOK_SECRET;
 
+  if (!secret) {
+    console.error('RESEND_WEBHOOK_SECRET is not set — refusing unverified webhooks');
+    return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 });
+  }
+
+  // Signature verification needs the raw bytes, so read text before parsing.
+  const raw = await request.text();
+
+  let body: Record<string, unknown>;
   try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+    body = new Webhook(secret).verify(raw, {
+      'svix-id': request.headers.get('svix-id') ?? '',
+      'svix-timestamp': request.headers.get('svix-timestamp') ?? '',
+      'svix-signature': request.headers.get('svix-signature') ?? '',
+    }) as Record<string, unknown>;
+  } catch (err) {
+    console.warn('Rejected webhook with bad signature:', err);
+    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
   }
 
   const eventType = (body.type as string) || 'email.received';
@@ -30,7 +47,8 @@ export async function POST(request: Request) {
     // Ignore email.sent — we track those ourselves
   } catch (err) {
     console.error(`Error handling ${eventType}:`, err);
-    // Always return 200 to prevent Resend from retrying indefinitely
+    // Signature already checked, so a 200 here only suppresses retries of a
+    // request we genuinely failed to process.
   }
 
   return NextResponse.json({ received: true });
@@ -103,7 +121,11 @@ async function handleInboundEmail(webhookData: Record<string, unknown>) {
 
     if (!user) continue;
 
-    // 3. Store the email in that user's inbox
+    // 3. Let this recipient's filters decide where it lands
+    const rules = (await Rule.find({ userId: user._id }).sort({ createdAt: 1 }).lean()) as IRule[];
+    const routed = routeWithRules({ from, to, subject, text, html }, rules);
+
+    // 4. Store the email in that user's inbox
     try {
       await Email.create({
         messageId: `${emailId}-uid-${user._id}`,
@@ -113,8 +135,10 @@ async function handleInboundEmail(webhookData: Record<string, unknown>) {
         subject,
         html,
         text,
-        folder: 'inbox',
+        folder: routed.folder,
         isRead: false,
+        isStarred: routed.isStarred,
+        labels: routed.labels,
         inReplyTo,
         threadId,
         references,

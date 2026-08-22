@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
 import { useMailStore, LabelItem } from '@/lib/store';
 import { createLabel, deleteLabel } from '@/app/actions/label-actions';
+import { FOLDERS } from '@/lib/constants';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Tray,
@@ -21,6 +22,7 @@ import {
   SignOut,
   GearSix,
   ShieldCheck,
+  ClockCountdown,
 } from '@phosphor-icons/react';
 
 const LABEL_COLORS = [
@@ -35,24 +37,15 @@ const LABEL_COLORS = [
 ];
 
 const FOLDER_ICONS: Record<string, React.ElementType> = {
-  inbox: Tray,
-  sent: PaperPlaneTilt,
-  drafts: PencilSimpleLine,
-  starred: Star,
-  archive: Archive,
-  spam: Warning,
-  trash: Trash,
+  Tray,
+  PaperPlaneTilt,
+  PencilSimpleLine,
+  ClockCountdown,
+  Star,
+  Archive,
+  Warning,
+  Trash,
 };
-
-const FOLDERS = [
-  { id: 'inbox', label: 'Inbox' },
-  { id: 'starred', label: 'Starred' },
-  { id: 'sent', label: 'Sent' },
-  { id: 'drafts', label: 'Drafts' },
-  { id: 'archive', label: 'Archive' },
-  { id: 'spam', label: 'Spam' },
-  { id: 'trash', label: 'Trash' },
-];
 
 export function MailSidebar() {
   const router = useRouter();
@@ -167,7 +160,7 @@ export function MailSidebar() {
       <nav className="flex-1 overflow-y-auto px-2">
         <div className="space-y-0.5">
           {FOLDERS.map((folder) => {
-            const Icon = FOLDER_ICONS[folder.id];
+            const Icon = FOLDER_ICONS[folder.icon];
             const isActive = activeFolderId === folder.id;
             const unread = unreadCounts[folder.id] || 0;
 
@@ -309,6 +302,19 @@ export function MailSidebar() {
 
       {/* Bottom section */}
       <div className="border-t border-border p-2">
+        <button
+          onClick={() => router.push('/settings')}
+          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+            activeFolderId === 'settings'
+              ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
+              : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground'
+          }`}
+          title={sidebarCollapsed ? 'Settings' : undefined}
+        >
+          <GearSix size={20} className="shrink-0" />
+          {!sidebarCollapsed && <span>Settings</span>}
+        </button>
+
         {isAdmin && (
           <button
             onClick={() => router.push('/admin')}

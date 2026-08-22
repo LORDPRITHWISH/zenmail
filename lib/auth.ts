@@ -4,7 +4,6 @@ import { MongoClient } from 'mongodb';
 import { authConfig } from './auth.config';
 import { connectDB } from './mongoose';
 import { User } from '@/models/User';
-import { Email } from '@/models/Email';
 
 // Shared MongoClient instance for the adapter (it needs the native driver, not mongoose)
 const client = new MongoClient(process.env.DATABASE_URL!);
@@ -27,24 +26,29 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     },
   },
   events: {
-    async createUser({ user }) {
+    async signIn({ user }) {
+      if (!user?.email || !user?.id) return;
       await connectDB();
 
-      // Promote to admin if this is the designated admin email
-      const adminEmail = process.env.ADMIN_EMAIL;
-      if (adminEmail && user.email === adminEmail) {
-        await User.findByIdAndUpdate(user.id, { role: 'admin' });
+      const email = user.email.toLowerCase();
+
+      // If this is a placeholder user that just signed up for real, activate them.
+      const dbUser = await User.findOne({ email }).select('isPlaceholder role').lean() as
+        | { isPlaceholder?: boolean; role?: string }
+        | null;
+
+      if (dbUser?.isPlaceholder) {
+        await User.findOneAndUpdate(
+          { email },
+          { $set: { isPlaceholder: false } }
+        );
+        console.log(`Activated placeholder account for ${email}`);
       }
 
-      // Claim any emails that arrived before this user registered
-      if (user.email && user.id) {
-        const claimed = await Email.updateMany(
-          { pendingRecipientEmail: new RegExp(`^${user.email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
-          { $set: { userId: user.id }, $unset: { pendingRecipientEmail: '' } }
-        );
-        if (claimed.modifiedCount > 0) {
-          console.log(`Claimed ${claimed.modifiedCount} pending email(s) for new user: ${user.email}`);
-        }
+      // Promote to admin if this is the designated admin email (first real sign-in)
+      const adminEmail = process.env.ADMIN_EMAIL;
+      if (adminEmail && email === adminEmail.toLowerCase() && dbUser?.role !== 'admin') {
+        await User.findOneAndUpdate({ email }, { $set: { role: 'admin' } });
       }
     },
   },

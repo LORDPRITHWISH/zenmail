@@ -1,8 +1,11 @@
 'use client';
 
+import { useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
-import { useMailStore } from '@/lib/store';
+import { useMailStore, LabelItem } from '@/lib/store';
+import { createLabel, deleteLabel } from '@/app/actions/label-actions';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Tray,
   PaperPlaneTilt,
@@ -12,12 +15,24 @@ import {
   Warning,
   Trash,
   Plus,
+  X,
   CaretLeft,
   CaretRight,
   SignOut,
   GearSix,
   ShieldCheck,
 } from '@phosphor-icons/react';
+
+const LABEL_COLORS = [
+  '#6366f1', // indigo
+  '#3b82f6', // blue
+  '#10b981', // emerald
+  '#f59e0b', // amber
+  '#ef4444', // red
+  '#ec4899', // pink
+  '#8b5cf6', // violet
+  '#06b6d4', // cyan
+];
 
 const FOLDER_ICONS: Record<string, React.ElementType> = {
   inbox: Tray,
@@ -48,9 +63,16 @@ export function MailSidebar() {
     toggleSidebar,
     openCompose,
     unreadCounts,
-    currentFolder,
     setCurrentFolder,
+    labels,
+    setLabels,
+    setCurrentLabelId,
   } = useMailStore();
+
+  const [isAddingLabel, setIsAddingLabel] = useState(false);
+  const [newLabelName, setNewLabelName] = useState('');
+  const [newLabelColor, setNewLabelColor] = useState(LABEL_COLORS[0]);
+  const [labelToDelete, setLabelToDelete] = useState<LabelItem | null>(null);
 
   const isAdmin = (session?.user as Record<string, unknown>)?.role === 'admin';
 
@@ -59,8 +81,44 @@ export function MailSidebar() {
     router.push(`/${folderId}`);
   };
 
+  const handleLabelClick = (labelId: string) => {
+    setCurrentLabelId(labelId);
+    router.push(`/label/${labelId}`);
+  };
+
+  const handleCreateLabel = async () => {
+    const name = newLabelName.trim();
+    if (!name) {
+      setIsAddingLabel(false);
+      return;
+    }
+    const result = await createLabel(name, newLabelColor);
+    if (result.label) {
+      setLabels([...labels, result.label].sort((a, b) => a.name.localeCompare(b.name)));
+    }
+    setNewLabelName('');
+    setNewLabelColor(LABEL_COLORS[0]);
+    setIsAddingLabel(false);
+  };
+
+  const handleDeleteLabelClick = (e: React.MouseEvent, label: LabelItem) => {
+    e.stopPropagation();
+    setLabelToDelete(label);
+  };
+
+  const confirmDeleteLabel = async () => {
+    if (!labelToDelete) return;
+    const id = labelToDelete.id;
+    setLabels(labels.filter((l) => l.id !== id));
+    setLabelToDelete(null);
+    await deleteLabel(id);
+    if (pathname === `/label/${id}`) router.push('/inbox');
+  };
+
   const activeFolderId =
     pathname.split('/').filter(Boolean)[0] || 'inbox';
+  const activeLabelId =
+    activeFolderId === 'label' ? pathname.split('/').filter(Boolean)[1] : null;
 
   return (
     <aside
@@ -150,6 +208,103 @@ export function MailSidebar() {
             );
           })}
         </div>
+
+        {/* Labels */}
+        {!sidebarCollapsed && (
+          <div className="mt-4">
+            <div className="flex items-center justify-between px-3 py-1">
+              <span className="text-xs font-semibold uppercase tracking-wide text-sidebar-foreground/40">
+                Labels
+              </span>
+              <button
+                onClick={() => setIsAddingLabel(true)}
+                className="flex h-5 w-5 items-center justify-center rounded text-sidebar-foreground/40 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                title="New label"
+              >
+                <Plus size={14} weight="bold" />
+              </button>
+            </div>
+
+            <div className="space-y-0.5">
+              {labels.map((label) => {
+                const isActive = activeLabelId === label.id;
+                return (
+                  <button
+                    key={label.id}
+                    onClick={() => handleLabelClick(label.id)}
+                    className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-150 ${
+                      isActive
+                        ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
+                        : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
+                    }`}
+                  >
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: label.color }}
+                    />
+                    <span className="flex-1 truncate text-left">{label.name}</span>
+                    <span
+                      onClick={(e) => handleDeleteLabelClick(e, label)}
+                      className="hidden h-5 w-5 shrink-0 items-center justify-center rounded text-sidebar-foreground/40 hover:bg-destructive/10 hover:text-destructive group-hover:flex"
+                      title="Delete label"
+                    >
+                      <X size={12} weight="bold" />
+                    </span>
+                  </button>
+                );
+              })}
+
+              {isAddingLabel && (
+                <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-2">
+                  <input
+                    autoFocus
+                    type="text"
+                    value={newLabelName}
+                    onChange={(e) => setNewLabelName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleCreateLabel();
+                      if (e.key === 'Escape') {
+                        setIsAddingLabel(false);
+                        setNewLabelName('');
+                      }
+                    }}
+                    placeholder="Label name"
+                    className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
+                  />
+                  <div className="flex items-center gap-1.5">
+                    {LABEL_COLORS.map((color) => (
+                      <button
+                        key={color}
+                        onClick={() => setNewLabelColor(color)}
+                        className={`h-4 w-4 rounded-full transition-transform ${
+                          newLabelColor === color ? 'scale-125 ring-2 ring-offset-1 ring-offset-background ring-foreground/30' : ''
+                        }`}
+                        style={{ backgroundColor: color }}
+                      />
+                    ))}
+                  </div>
+                  <div className="flex justify-end gap-1">
+                    <button
+                      onClick={() => {
+                        setIsAddingLabel(false);
+                        setNewLabelName('');
+                      }}
+                      className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleCreateLabel}
+                      className="rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                    >
+                      Create
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </nav>
 
       {/* Bottom section */}
@@ -166,7 +321,7 @@ export function MailSidebar() {
         )}
 
         <button
-          onClick={() => signOut({ callbackUrl: '/login' })}
+          onClick={() => signOut({ callbackUrl: '/' })}
           className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-sidebar-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive"
           title={sidebarCollapsed ? 'Sign Out' : undefined}
         >
@@ -202,6 +357,16 @@ export function MailSidebar() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={labelToDelete !== null}
+        title={`Delete "${labelToDelete?.name}"?`}
+        description="This label will be removed from every email it's applied to. This can't be undone."
+        confirmLabel="Delete"
+        destructive
+        onConfirm={confirmDeleteLabel}
+        onCancel={() => setLabelToDelete(null)}
+      />
     </aside>
   );
 }

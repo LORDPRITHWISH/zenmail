@@ -47,6 +47,7 @@ export function ComposeDialog() {
   const [showCcBcc, setShowCcBcc] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [attachments, setAttachments] = useState<AttachmentFile[]>([]);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -133,6 +134,7 @@ export function ComposeDialog() {
   const handleSend = () => {
     if (to.length === 0) return;
 
+    setSendError(null);
     startTransition(async () => {
       const result = await sendEmail({
         from: isAdmin && fromAddress ? fromAddress : undefined,
@@ -155,7 +157,7 @@ export function ComposeDialog() {
         closeCompose();
         resetForm();
       } else {
-        alert(result.error || 'Failed to send');
+        setSendError(result.error || 'Failed to send');
       }
     });
   };
@@ -189,6 +191,7 @@ export function ComposeDialog() {
     setFromAddress(composeFrom || '');
     setAttachments([]);
     setShowCcBcc(false);
+    setSendError(null);
   };
 
   if (!isComposeOpen) return null;
@@ -320,6 +323,13 @@ export function ComposeDialog() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Send error */}
+          {sendError && (
+            <div className="border-t border-border bg-destructive/5 px-4 py-2 text-xs text-destructive">
+              {sendError}
             </div>
           )}
 

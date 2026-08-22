@@ -2,7 +2,14 @@
 
 import { useEffect, useRef, useState, useTransition, useCallback } from "react"
 import { useRouter } from "next/navigation"
-import { getEmail, toggleStar, deleteEmails } from "@/app/actions/email-actions"
+import {
+  getEmail,
+  toggleStar,
+  toggleRead,
+  deleteEmails,
+  getUnreadCounts,
+} from "@/app/actions/email-actions"
+import { toggleEmailLabel } from "@/app/actions/label-actions"
 import { useMailStore } from "@/lib/store"
 import {
   ArrowLeft,
@@ -14,6 +21,8 @@ import {
   ArrowsClockwise,
   Paperclip,
   DownloadSimple,
+  EnvelopeSimple,
+  Tag,
 } from "@phosphor-icons/react"
 
 interface EmailViewProps {
@@ -58,20 +67,66 @@ function formatFileSize(bytes: number): string {
 
 export function EmailView({ emailId }: EmailViewProps) {
   const router = useRouter()
-  const { openReply } = useMailStore()
+  const { openReply, labels, patchEmail, setUnreadCounts } = useMailStore()
   const [email, setEmail] = useState<Record<string, unknown> | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isPending, startTransition] = useTransition()
+  const [isLabelMenuOpen, setIsLabelMenuOpen] = useState(false)
+  const bodyRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     setIsLoading(true)
     getEmail(emailId).then((result) => {
       if (result.email) {
         setEmail(result.email)
+        // getEmail always marks the email read as a side effect
+        patchEmail(emailId, { isRead: true })
+        getUnreadCounts().then((r) => {
+          if (r.counts) setUnreadCounts(r.counts)
+        })
       }
       setIsLoading(false)
     })
-  }, [emailId])
+  }, [emailId, patchEmail, setUnreadCounts])
+
+  // Open links in the email body in a new tab
+  useEffect(() => {
+    if (!bodyRef.current) return
+    const links = bodyRef.current.querySelectorAll("a")
+    links.forEach((link) => {
+      link.setAttribute("target", "_blank")
+      link.setAttribute("rel", "noopener noreferrer")
+    })
+  }, [email])
+
+  const handleToggleRead = () => {
+    startTransition(async () => {
+      const result = await toggleRead(emailId)
+      if (result.success) {
+        setEmail((prev) => (prev ? { ...prev, isRead: result.isRead } : prev))
+        patchEmail(emailId, { isRead: result.isRead })
+        const counts = await getUnreadCounts()
+        if (counts.counts) setUnreadCounts(counts.counts)
+      }
+    })
+  }
+
+  const handleToggleLabel = (labelId: string) => {
+    startTransition(async () => {
+      const result = await toggleEmailLabel(emailId, labelId)
+      if (result.success) {
+        setEmail((prev) => {
+          if (!prev) return prev
+          const current = (prev.labels as string[]) || []
+          const next = result.added
+            ? [...current, labelId]
+            : current.filter((id) => id !== labelId)
+          patchEmail(emailId, { labels: next })
+          return { ...prev, labels: next }
+        })
+      }
+    })
+  }
 
   if (isLoading) {
     return (
@@ -93,6 +148,8 @@ export function EmailView({ emailId }: EmailViewProps) {
   const senderEmail = extractEmail(email.from as string)
   const attachments =
     (email.attachments as Array<Record<string, unknown>>) || []
+  const emailLabelIds = (email.labels as string[]) || []
+  const emailLabels = labels.filter((l) => emailLabelIds.includes(l.id))
 
   return (
     <div className="flex h-full flex-col">
@@ -106,6 +163,68 @@ export function EmailView({ emailId }: EmailViewProps) {
         </button>
 
         <div className="flex-1" />
+
+        <button
+          onClick={handleToggleRead}
+          disabled={isPending}
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+          title={(email.isRead as boolean) ? "Mark as unread" : "Mark as read"}
+        >
+          <EnvelopeSimple size={18} weight={(email.isRead as boolean) ? "regular" : "fill"} />
+        </button>
+
+        <div className="relative">
+          <button
+            onClick={() => setIsLabelMenuOpen((v) => !v)}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            title="Labels"
+          >
+            <Tag size={18} />
+          </button>
+          {isLabelMenuOpen && (
+            <>
+              <div
+                className="fixed inset-0 z-10"
+                onClick={() => setIsLabelMenuOpen(false)}
+              />
+              <div className="absolute right-0 top-9 z-20 w-48 rounded-xl border border-border bg-popover p-1.5 shadow-lg">
+                {labels.length === 0 ? (
+                  <p className="px-2 py-1.5 text-xs text-muted-foreground">
+                    No labels yet
+                  </p>
+                ) : (
+                  labels.map((label) => {
+                    const checked = emailLabelIds.includes(label.id)
+                    return (
+                      <button
+                        key={label.id}
+                        onClick={() => handleToggleLabel(label.id)}
+                        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-foreground hover:bg-muted"
+                      >
+                        <span
+                          className="h-2.5 w-2.5 shrink-0 rounded-full"
+                          style={{ backgroundColor: label.color }}
+                        />
+                        <span className="flex-1 truncate">{label.name}</span>
+                        {checked && (
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                            <path
+                              d="M2 6L5 9L10 3"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        )}
+                      </button>
+                    )
+                  })
+                )}
+              </div>
+            </>
+          )}
+        </div>
 
         <button
           onClick={() =>
@@ -142,9 +261,28 @@ export function EmailView({ emailId }: EmailViewProps) {
       {/* Email content */}
       <div className="flex-1 overflow-y-auto px-6 py-6">
         {/* Subject */}
-        <h1 className="mb-6 text-xl font-semibold text-foreground">
+        <h1 className="mb-2 text-xl font-semibold text-foreground">
           {email.subject as string}
         </h1>
+
+        {/* Label chips */}
+        {emailLabels.length > 0 && (
+          <div className="mb-4 flex flex-wrap gap-1.5">
+            {emailLabels.map((label) => (
+              <span
+                key={label.id}
+                className="flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium"
+                style={{ backgroundColor: `${label.color}1a`, color: label.color }}
+              >
+                <span
+                  className="h-1.5 w-1.5 rounded-full"
+                  style={{ backgroundColor: label.color }}
+                />
+                {label.name}
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* Sender info */}
         <div className="mb-6 flex items-start gap-4">
@@ -182,6 +320,7 @@ export function EmailView({ emailId }: EmailViewProps) {
         <div className="rounded-xl border border-border bg-card p-6">
           {email.html ? (
             <div
+              ref={bodyRef}
               className="prose prose-sm dark:prose-invert max-w-none"
               dangerouslySetInnerHTML={{ __html: email.html as string }}
             />

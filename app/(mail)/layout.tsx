@@ -7,6 +7,7 @@ import { MailHeader } from '@/components/mail/header';
 import { ComposeDialog } from '@/components/mail/compose-dialog';
 import { useMailStore } from '@/lib/store';
 import { getUnreadCounts } from '@/app/actions/email-actions';
+import { getLabels } from '@/app/actions/label-actions';
 
 export default function MailLayout({
   children,
@@ -14,7 +15,7 @@ export default function MailLayout({
   children: React.ReactNode;
 }) {
   const [mounted, setMounted] = useState(false);
-  const { sidebarCollapsed, setUnreadCounts } = useMailStore();
+  const { sidebarCollapsed, setUnreadCounts, setLabels } = useMailStore();
 
   useEffect(() => {
     setMounted(true);
@@ -33,6 +34,12 @@ export default function MailLayout({
     const interval = setInterval(fetchCounts, 30000); // Every 30s
     return () => clearInterval(interval);
   }, [setUnreadCounts]);
+
+  useEffect(() => {
+    getLabels().then((result) => {
+      if (result.labels) setLabels(result.labels);
+    });
+  }, [setLabels]);
 
   return (
     <SessionProvider>

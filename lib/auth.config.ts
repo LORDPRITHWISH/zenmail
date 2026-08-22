@@ -44,7 +44,7 @@ export const authConfig: NextAuthConfig = {
       const pathname = nextUrl.pathname;
 
       const publicRoutes = ['/login', '/api/auth', '/api/webhooks'];
-      const isPublicRoute = publicRoutes.some((route) =>
+      const isPublicRoute = pathname === '/' || publicRoutes.some((route) =>
         pathname.startsWith(route)
       );
 

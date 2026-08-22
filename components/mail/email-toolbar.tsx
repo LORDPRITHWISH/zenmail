@@ -18,7 +18,11 @@ import {
 } from '@phosphor-icons/react';
 import { useTransition } from 'react';
 
-export function EmailToolbar() {
+interface EmailToolbarProps {
+  onRefresh: () => void;
+}
+
+export function EmailToolbar({ onRefresh }: EmailToolbarProps) {
   const { selectedIds, emails, selectAll, clearSelection } = useMailStore();
   const [isPending, startTransition] = useTransition();
   const hasSelection = selectedIds.size > 0;
@@ -28,8 +32,7 @@ export function EmailToolbar() {
     startTransition(async () => {
       await action();
       clearSelection();
-      // Trigger refresh
-      window.location.reload();
+      onRefresh();
     });
   };
 

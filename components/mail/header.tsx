@@ -16,8 +16,15 @@ import { getEmails, getUnreadCounts } from '@/app/actions/email-actions';
 
 export function MailHeader() {
   const { data: session } = useSession();
-  const { searchQuery, setSearchQuery, currentFolder, setEmails, setIsLoading, setUnreadCounts } =
-    useMailStore();
+  const {
+    searchQuery,
+    setSearchQuery,
+    currentFolder,
+    currentLabelId,
+    setEmails,
+    setIsLoading,
+    setUnreadCounts,
+  } = useMailStore();
   const { resolvedTheme, setTheme } = useTheme();
   const [isPending, startTransition] = useTransition();
   const [localSearch, setLocalSearch] = useState(searchQuery);
@@ -37,7 +44,7 @@ export function MailHeader() {
   const handleRefresh = useCallback(() => {
     startTransition(async () => {
       setIsLoading(true);
-      const result = await getEmails(currentFolder, 1, searchQuery || undefined);
+      const result = await getEmails(currentFolder, 1, searchQuery || undefined, currentLabelId || undefined);
       if (result.emails) {
         setEmails(result.emails as never[]);
       }
@@ -47,7 +54,7 @@ export function MailHeader() {
       }
       setIsLoading(false);
     });
-  }, [currentFolder, searchQuery, setEmails, setIsLoading, setUnreadCounts]);
+  }, [currentFolder, currentLabelId, searchQuery, setEmails, setIsLoading, setUnreadCounts]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,7 +64,8 @@ export function MailHeader() {
       const result = await getEmails(
         currentFolder,
         1,
-        localSearch || undefined
+        localSearch || undefined,
+        currentLabelId || undefined
       );
       if (result.emails) {
         setEmails(result.emails as never[]);

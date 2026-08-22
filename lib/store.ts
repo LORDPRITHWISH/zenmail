@@ -24,10 +24,20 @@ export interface EmailItem {
   createdAt: string;
 }
 
+export interface LabelItem {
+  id: string;
+  name: string;
+  color: string;
+}
+
 interface MailState {
   // Current folder
   currentFolder: string;
   setCurrentFolder: (folder: string) => void;
+
+  // Current label (mutually exclusive with folder-based views)
+  currentLabelId: string | null;
+  setCurrentLabelId: (id: string | null) => void;
 
   // Selected email
   selectedEmailId: string | null;
@@ -36,6 +46,11 @@ interface MailState {
   // Email list
   emails: EmailItem[];
   setEmails: (emails: EmailItem[]) => void;
+  patchEmail: (id: string, patch: Partial<EmailItem>) => void;
+
+  // Labels
+  labels: LabelItem[];
+  setLabels: (labels: LabelItem[]) => void;
 
   // Compose
   isComposeOpen: boolean;
@@ -73,13 +88,23 @@ interface MailState {
 
 export const useMailStore = create<MailState>((set, get) => ({
   currentFolder: 'inbox',
-  setCurrentFolder: (folder) => set({ currentFolder: folder, selectedEmailId: null }),
+  setCurrentFolder: (folder) => set({ currentFolder: folder, currentLabelId: null, selectedEmailId: null }),
+
+  currentLabelId: null,
+  setCurrentLabelId: (id) => set({ currentLabelId: id, selectedEmailId: null }),
 
   selectedEmailId: null,
   setSelectedEmailId: (id) => set({ selectedEmailId: id }),
 
   emails: [],
   setEmails: (emails) => set({ emails }),
+  patchEmail: (id, patch) =>
+    set((state) => ({
+      emails: state.emails.map((e) => (e.id === id ? { ...e, ...patch } : e)),
+    })),
+
+  labels: [],
+  setLabels: (labels) => set({ labels }),
 
   isComposeOpen: false,
   composeFrom: undefined,

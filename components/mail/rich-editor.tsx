@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
@@ -72,6 +73,9 @@ export function RichEditor({
     },
   });
 
+  const [urlPopover, setUrlPopover] = useState<'link' | 'image' | null>(null);
+  const [urlValue, setUrlValue] = useState('');
+
   if (!editor) return null;
 
   const ToolbarButton = ({
@@ -99,18 +103,27 @@ export function RichEditor({
     </button>
   );
 
-  const addLink = () => {
-    const url = prompt('Enter URL:');
-    if (url) {
-      editor.chain().focus().setLink({ href: url }).run();
-    }
+  const openLinkPopover = () => {
+    setUrlValue((editor.getAttributes('link').href as string) || '');
+    setUrlPopover('link');
   };
 
-  const addImage = () => {
-    const url = prompt('Enter image URL:');
+  const openImagePopover = () => {
+    setUrlValue('');
+    setUrlPopover('image');
+  };
+
+  const submitUrlPopover = () => {
+    const url = urlValue.trim();
     if (url) {
-      editor.chain().focus().setImage({ src: url }).run();
+      if (urlPopover === 'link') {
+        editor.chain().focus().setLink({ href: url }).run();
+      } else if (urlPopover === 'image') {
+        editor.chain().focus().setImage({ src: url }).run();
+      }
     }
+    setUrlPopover(null);
+    setUrlValue('');
   };
 
   return (
@@ -263,16 +276,61 @@ export function RichEditor({
 
         {/* Link & Image */}
         <ToolbarButton
-          onClick={addLink}
+          onClick={openLinkPopover}
           isActive={editor.isActive('link')}
           title="Add link"
         >
           <LinkSimple size={15} />
         </ToolbarButton>
-        <ToolbarButton onClick={addImage} title="Add image">
+        <ToolbarButton onClick={openImagePopover} title="Add image">
           <ImageIcon size={15} />
         </ToolbarButton>
       </div>
+
+      {/* URL input popover for link/image */}
+      {urlPopover && (
+        <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-3 py-2">
+          <input
+            autoFocus
+            type="url"
+            value={urlValue}
+            onChange={(e) => setUrlValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                submitUrlPopover();
+              }
+              if (e.key === 'Escape') {
+                setUrlPopover(null);
+                setUrlValue('');
+              }
+            }}
+            placeholder={
+              urlPopover === 'link'
+                ? 'https://example.com'
+                : 'https://example.com/image.png'
+            }
+            className="flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
+          />
+          <button
+            type="button"
+            onClick={submitUrlPopover}
+            className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            {urlPopover === 'link' ? 'Add link' : 'Add image'}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setUrlPopover(null);
+              setUrlValue('');
+            }}
+            className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
 
       {/* Editor */}
       <EditorContent editor={editor} />

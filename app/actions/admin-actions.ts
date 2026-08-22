@@ -146,7 +146,7 @@ export async function adminGetStats() {
   const [totalEmails, totalUsers, totalSent, totalReceived, totalUnread] =
     await Promise.all([
       Email.countDocuments(),
-      User.countDocuments(),
+      User.countDocuments({ isPlaceholder: { $ne: true } }),
       Email.countDocuments({ folder: 'sent' }),
       Email.countDocuments({ folder: 'inbox' }),
       Email.countDocuments({ folder: 'inbox', isRead: false }),
@@ -159,7 +159,8 @@ export async function adminGetUsers() {
   await requireAdmin();
   await connectDB();
 
-  const users = await User.find().sort({ createdAt: -1 }).lean();
+  // Exclude placeholder (pre-created) users — they aren't real accounts yet
+  const users = await User.find({ isPlaceholder: { $ne: true } }).sort({ createdAt: -1 }).lean();
 
   // Get email counts per user
   const emailCounts = await Email.aggregate([

@@ -10,7 +10,8 @@ import mongoose from 'mongoose';
 export async function getEmails(
   folder: string,
   page: number = 1,
-  search?: string
+  search?: string,
+  labelId?: string
 ) {
   const session = await auth();
   if (!session?.user?.id) {
@@ -20,22 +21,18 @@ export async function getEmails(
   await connectDB();
   const skip = (page - 1) * EMAILS_PER_PAGE;
 
-  const user = await User.findById(session.user.id).select('role monitoredEmails').lean();
+
   const baseUserCondition = { userId: new mongoose.Types.ObjectId(session.user.id) };
 
   // Build query
   const query: Record<string, any> = {};
 
-  if (folder === 'inbox' && (user as any)?.role === 'admin' && (user as any)?.monitoredEmails?.length > 0) {
-    query.$or = [
-      baseUserCondition,
-      { to: { $in: (user as any).monitoredEmails } }
-    ];
-  } else {
-    query.userId = baseUserCondition.userId;
-  }
+  query.userId = baseUserCondition.userId;
 
-  if (folder === 'starred') {
+  if (labelId) {
+    query.labels = labelId;
+    query.folder = { $ne: 'trash' };
+  } else if (folder === 'starred') {
     query.isStarred = true;
     query.folder = { $ne: 'trash' };
   } else {
@@ -94,18 +91,10 @@ export async function getEmail(id: string) {
 
   await connectDB();
 
-  const user = await User.findById(session.user.id).select('role monitoredEmails').lean();
   
   const query: any = { _id: new mongoose.Types.ObjectId(id) };
 
-  if ((user as any)?.role === 'admin' && (user as any)?.monitoredEmails?.length > 0) {
-    query.$or = [
-      { userId: new mongoose.Types.ObjectId(session.user.id) },
-      { to: { $in: (user as any).monitoredEmails } }
-    ];
-  } else {
-    query.userId = new mongoose.Types.ObjectId(session.user.id);
-  }
+  query.userId = new mongoose.Types.ObjectId(session.user.id);
 
   const email = await Email.findOne(query).lean();
 
@@ -116,6 +105,7 @@ export async function getEmail(id: string) {
   // Mark as read
   if (!email.isRead) {
     await Email.findByIdAndUpdate(id, { isRead: true });
+    email.isRead = true;
   }
 
   return {
@@ -239,27 +229,14 @@ export async function getUnreadCounts() {
 
   await connectDB();
 
-  const user = await User.findById(session.user.id).select('role monitoredEmails').lean();
+
   const userId = new mongoose.Types.ObjectId(session.user.id);
   const folders = ['inbox', 'sent', 'drafts', 'spam', 'trash'];
   const counts: Record<string, number> = {};
 
   await Promise.all(
     folders.map(async (folder) => {
-      let query: any = { folder, isRead: false };
-      
-      if (folder === 'inbox' && (user as any)?.role === 'admin' && (user as any)?.monitoredEmails?.length > 0) {
-        query = {
-          folder,
-          isRead: false,
-          $or: [
-            { userId },
-            { to: { $in: (user as any).monitoredEmails } }
-          ]
-        };
-      } else {
-        query.userId = userId;
-      }
+      let query: any = { folder, isRead: false, userId };
       
       counts[folder] = await Email.countDocuments(query);
     })

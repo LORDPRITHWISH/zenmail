@@ -16,7 +16,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  // Resend sends: { type: "email.received", created_at: "...", data: { email_id, from, to, ... } }
   const eventType = (body.type as string) || 'email.received';
   const data = (body.data as Record<string, unknown>) ?? body;
 
@@ -46,69 +45,68 @@ async function handleInboundEmail(webhookData: Record<string, unknown>) {
   }
 
   // ── Fetch full email content from Resend API ──────────────────────────────
-  // The webhook only contains metadata. Body (html/text) must be fetched separately.
   const { data: full, error } = await resend.emails.receiving.get(emailId);
 
   if (error || !full) {
     console.error('Failed to retrieve full email content for', emailId, error);
-    // Fall back to webhook metadata so we at least store something
   }
 
-  const from = (full?.from ?? webhookData.from) as string;
-  const to = ((full?.to ?? webhookData.to) as string[]) || [];
-  const cc = ((full?.cc ?? webhookData.cc) as string[]) || [];
+  const from    = (full?.from ?? webhookData.from) as string;
+  const to      = ((full?.to ?? webhookData.to) as string[]) || [];
+  const cc      = ((full?.cc ?? webhookData.cc) as string[]) || [];
   const subject = ((full?.subject ?? webhookData.subject) as string) || '(No Subject)';
-  const html = full?.html as string | undefined;
-  const text = full?.text as string | undefined;
-  const inReplyTo = webhookData.in_reply_to as string | undefined;
+  const html    = full?.html as string | undefined;
+  const text    = full?.text as string | undefined;
+  const inReplyTo  = webhookData.in_reply_to as string | undefined;
   const references = (webhookData.references as string[]) || [];
 
-  // Use the Resend message_id (SMTP) as the thread anchor, email_id as the doc key
   const threadId = inReplyTo || emailId;
 
   console.log('Inbound email:', { emailId, from, to, subject, hasHtml: !!html, hasText: !!text });
 
-  // ── 1. Deliver to ALL registered users immediately ────────────────────────
-  // No privacy restriction — every registered user sees every inbound email.
-  const allUsers = await User.find({}).select('_id').lean() as Array<{ _id: mongoose.Types.ObjectId }>;
+  // ── Resolve each recipient to a userId (real or placeholder) ─────────────
+  // Only the actual addressees get this email in their inbox.
+  const recipientAddresses = [...new Set([...to, ...cc].map(extractEmail))];
 
-  const userInserts = allUsers.map((u) =>
-    Email.create({
-      messageId: `${emailId}-uid-${u._id}`,
-      from,
-      to,
-      cc,
-      subject,
-      html,
-      text,
-      folder: 'inbox',
-      isRead: false,
-      inReplyTo,
-      threadId,
-      references,
-      userId: u._id,
-    }).catch((err: { code?: number }) => {
-      if (err?.code === 11000) return null; // duplicate (Resend retry) — safe to ignore
-      throw err;
-    })
-  );
+  let deliveredCount = 0;
 
-  const userResults = await Promise.all(userInserts);
-  const deliveredCount = userResults.filter(Boolean).length;
+  for (const address of recipientAddresses) {
+    const normalised = address.toLowerCase();
 
-  // ── 2. Park pending copies for unregistered recipient addresses ───────────
-  // These are claimed automatically when the user signs up (see lib/auth.ts).
-  const recipientEmails = [...new Set([...to, ...cc].map(extractEmail))];
-  const registeredEmails = new Set(
-    (await User.find({}).select('email').lean() as Array<{ email: string }>)
-      .map((u) => u.email.toLowerCase())
-  );
+    // 1. Try to find an existing user (real or placeholder) for this address
+    let user = await User.findOne({ email: normalised }).lean() as
+      | { _id: mongoose.Types.ObjectId; isPlaceholder?: boolean }
+      | null;
 
-  const pendingInserts = recipientEmails
-    .filter((e) => !registeredEmails.has(e.toLowerCase()))
-    .map((recipientEmail) =>
-      Email.create({
-        messageId: `${emailId}-pending-${recipientEmail}`,
+    // 2. If no user at all → create a placeholder so we have a stable userId
+    if (!user) {
+      try {
+        const created = await User.create({
+          email: normalised,
+          isPlaceholder: true,
+        });
+        user = { _id: created._id, isPlaceholder: true };
+        console.log(`Created placeholder user for <${normalised}>`);
+      } catch (err: unknown) {
+        // Race condition: another request may have created it concurrently
+        const e = err as { code?: number };
+        if (e?.code === 11000) {
+          user = await User.findOne({ email: normalised }).lean() as
+            | { _id: mongoose.Types.ObjectId }
+            | null;
+        } else {
+          console.error(`Failed to create placeholder for ${normalised}:`, err);
+          continue; // skip this recipient
+        }
+      }
+    }
+
+    if (!user) continue;
+
+    // 3. Store the email in that user's inbox
+    try {
+      await Email.create({
+        messageId: `${emailId}-uid-${user._id}`,
         from,
         to,
         cc,
@@ -120,19 +118,20 @@ async function handleInboundEmail(webhookData: Record<string, unknown>) {
         inReplyTo,
         threadId,
         references,
-        pendingRecipientEmail: recipientEmail,
-      }).catch((err: { code?: number }) => {
-        if (err?.code === 11000) return null;
-        throw err;
-      })
-    );
+        userId: user._id,
+      });
+      deliveredCount++;
+    } catch (err: unknown) {
+      const e = err as { code?: number };
+      if (e?.code === 11000) {
+        // Resend retry — already stored, safe to ignore
+      } else {
+        console.error(`Failed to store email for ${normalised}:`, err);
+      }
+    }
+  }
 
-  const pendingResults = await Promise.all(pendingInserts);
-  const pendingCount = pendingResults.filter(Boolean).length;
-
-  console.log(
-    `✓ "${subject}" from ${from} → ${deliveredCount} delivered, ${pendingCount} pending`
-  );
+  console.log(`✓ "${subject}" from ${from} → ${deliveredCount}/${recipientAddresses.length} recipients stored`);
 }
 
 function extractEmail(input: string): string {

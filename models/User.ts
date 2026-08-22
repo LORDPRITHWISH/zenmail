@@ -8,6 +8,7 @@ export interface IUser extends Document {
   image?: string | null;
   role: string;
   monitoredEmails: string[];
+  isPlaceholder: boolean; // true = pre-created for unregistered recipient; false = real account
   createdAt: Date;
   updatedAt: Date;
 }
@@ -20,6 +21,7 @@ const UserSchema = new Schema<IUser>(
     image: { type: String, default: null },
     role: { type: String, default: 'user' },
     monitoredEmails: { type: [String], default: [] },
+    isPlaceholder: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

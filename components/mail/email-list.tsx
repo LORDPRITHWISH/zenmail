@@ -1,41 +1,56 @@
 'use client';
 
-import { useEffect, useTransition } from 'react';
-import { useMailStore, EmailItem } from '@/lib/store';
-import { getEmails } from '@/app/actions/email-actions';
+import { useCallback, useEffect, useTransition } from 'react';
+import { useMailStore } from '@/lib/store';
+import { getEmails, getUnreadCounts } from '@/app/actions/email-actions';
 import { EmailListItem } from './email-list-item';
 import { EmailToolbar } from './email-toolbar';
 import { Tray } from '@phosphor-icons/react';
 
 interface EmailListProps {
-  folder: string;
+  folder?: string;
+  labelId?: string;
 }
 
-export function EmailList({ folder }: EmailListProps) {
+export function EmailList({ folder, labelId }: EmailListProps) {
   const {
     emails,
     setEmails,
     setCurrentFolder,
+    setCurrentLabelId,
     selectedEmailId,
     setSelectedEmailId,
     isLoading,
     setIsLoading,
     searchQuery,
+    setUnreadCounts,
+    labels,
   } = useMailStore();
   const [isPending, startTransition] = useTransition();
 
-  useEffect(() => {
-    setCurrentFolder(folder);
-
+  const refresh = useCallback(() => {
     startTransition(async () => {
       setIsLoading(true);
-      const result = await getEmails(folder, 1, searchQuery || undefined);
+      const result = await getEmails(folder || '', 1, searchQuery || undefined, labelId);
       if (result.emails) {
         setEmails(result.emails as never[]);
       }
+      const counts = await getUnreadCounts();
+      if (counts.counts) setUnreadCounts(counts.counts);
       setIsLoading(false);
     });
-  }, [folder, searchQuery, setCurrentFolder, setEmails, setIsLoading]);
+  }, [folder, labelId, searchQuery, setEmails, setIsLoading, setUnreadCounts]);
+
+  useEffect(() => {
+    if (labelId) {
+      setCurrentLabelId(labelId);
+    } else {
+      setCurrentFolder(folder || 'inbox');
+    }
+    refresh();
+  }, [folder, labelId, refresh, setCurrentFolder, setCurrentLabelId]);
+
+  const activeLabel = labelId ? labels.find((l) => l.id === labelId) : undefined;
 
   if (isLoading || isPending) {
     return (
@@ -57,9 +72,11 @@ export function EmailList({ folder }: EmailListProps) {
         <div className="text-center">
           <h3 className="text-lg font-medium text-foreground">No emails</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            {folder === 'inbox'
-              ? "Your inbox is empty. Enjoy the zen!"
-              : `No emails in ${folder}.`}
+            {labelId
+              ? `No emails labeled "${activeLabel?.name ?? ''}".`
+              : folder === 'inbox'
+                ? "Your inbox is empty. Enjoy the zen!"
+                : `No emails in ${folder}.`}
           </p>
         </div>
       </div>
@@ -68,7 +85,7 @@ export function EmailList({ folder }: EmailListProps) {
 
   return (
     <div className="flex h-full flex-col">
-      <EmailToolbar />
+      <EmailToolbar onRefresh={refresh} />
       <div className="flex-1 overflow-y-auto">
         {emails.map((email) => (
           <EmailListItem

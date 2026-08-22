@@ -80,9 +80,12 @@ export function EmailListItem({
   onSelect,
 }: EmailListItemProps) {
   const router = useRouter();
-  const { selectedIds, toggleSelected } = useMailStore();
+  const { selectedIds, toggleSelected, labels } = useMailStore();
   const [isPending, startTransition] = useTransition();
   const isChecked = selectedIds.has(email.id);
+  const emailLabels = email.labels
+    ?.map((id) => labels.find((l) => l.id === id))
+    .filter((l): l is NonNullable<typeof l> => Boolean(l));
 
   const senderName = extractName(email.from);
   const snippet = email.text || (email.html ? stripHtml(email.html) : '');
@@ -187,6 +190,20 @@ export function EmailListItem({
         </p>
         <p className="truncate text-xs text-muted-foreground/60">{snippet}</p>
       </div>
+
+      {/* Label dots */}
+      {emailLabels && emailLabels.length > 0 && (
+        <div className="flex shrink-0 items-center gap-1">
+          {emailLabels.map((l) => (
+            <span
+              key={l.id}
+              title={l.name}
+              className="h-2 w-2 rounded-full"
+              style={{ backgroundColor: l.color }}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Attachment indicator */}
       {email.attachments && email.attachments.length > 0 && (

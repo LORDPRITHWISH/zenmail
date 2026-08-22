@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from 'react';
 import { adminGetAllEmails } from '@/app/actions/admin-actions';
 import { useMailStore } from '@/lib/store';
-import { ArrowLeft, PencilSimple, Tray, CaretLeft, CaretRight, Paperclip, EnvelopeOpen } from '@phosphor-icons/react';
+import { ArrowLeft, PencilSimple, Tray, CaretLeft, CaretRight, Paperclip, EnvelopeOpen, Copy, Check } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { use } from 'react';
 
@@ -29,8 +29,15 @@ export default function AdminInboxPage({ params }: { params: Promise<{ email: st
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [isPending, startTransition] = useTransition();
+  const [copied, setCopied] = useState(false);
 
   const openCompose = useMailStore(s => s.openCompose);
+
+  const handleCopyEmail = () => {
+    navigator.clipboard.writeText(emailAddress);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const fetchEmails = (p: number) => {
     startTransition(async () => {
@@ -64,7 +71,16 @@ export default function AdminInboxPage({ params }: { params: Promise<{ email: st
             <ArrowLeft size={16} weight="bold" />
           </Link>
           <div>
-            <h1 className="text-sm font-semibold text-foreground">Inbox: {emailAddress}</h1>
+            <div className="flex items-center gap-1.5">
+              <h1 className="text-sm font-semibold text-foreground">Inbox: {emailAddress}</h1>
+              <button
+                onClick={handleCopyEmail}
+                className="flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                title="Copy email address"
+              >
+                {copied ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
+              </button>
+            </div>
             <p className="text-xs font-medium text-muted-foreground">Admin View</p>
           </div>
         </div>

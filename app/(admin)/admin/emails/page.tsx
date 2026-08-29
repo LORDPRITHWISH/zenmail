@@ -65,6 +65,10 @@ export default function AdminEmailsPage() {
         <AdminEmailView
           emailId={selectedEmailId}
           onBack={() => setSelectedEmailId(null)}
+          onDeleted={() => {
+            setSelectedEmailId(null);
+            fetchEmails(page);
+          }}
         />
       </div>
     );

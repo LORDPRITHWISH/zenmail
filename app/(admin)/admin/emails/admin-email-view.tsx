@@ -1,16 +1,19 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { adminGetEmail } from '@/app/actions/admin-actions';
+import { useEffect, useState, useTransition } from 'react';
+import { adminGetEmail, adminDeleteEmail } from '@/app/actions/admin-actions';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   ArrowLeft,
   Paperclip,
   DownloadSimple,
+  Trash,
 } from '@phosphor-icons/react';
 
 interface AdminEmailViewProps {
   emailId: string;
   onBack: () => void;
+  onDeleted?: () => void;
 }
 
 function formatFullDate(dateStr: string) {
@@ -49,9 +52,11 @@ function formatFileSize(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
-export function AdminEmailView({ emailId, onBack }: AdminEmailViewProps) {
+export function AdminEmailView({ emailId, onBack, onDeleted }: AdminEmailViewProps) {
   const [email, setEmail] = useState<Record<string, unknown> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
     let active = true;
@@ -88,6 +93,14 @@ export function AdminEmailView({ emailId, onBack }: AdminEmailViewProps) {
     );
   }
 
+  const handleDelete = () => {
+    startTransition(async () => {
+      await adminDeleteEmail(emailId);
+      setShowDeleteConfirm(false);
+      onDeleted?.();
+    });
+  };
+
   const senderName = extractName(email.from as string);
   const senderEmail = extractEmail(email.from as string);
   const attachments =
@@ -106,7 +119,25 @@ export function AdminEmailView({ emailId, onBack }: AdminEmailViewProps) {
         <div className="ml-2 flex items-center gap-2">
           <span className="text-sm font-medium text-foreground">Back to all emails</span>
         </div>
+        <button
+          onClick={() => setShowDeleteConfirm(true)}
+          disabled={isPending}
+          className="ml-auto flex h-8 items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
+        >
+          <Trash size={14} />
+          Delete
+        </button>
       </div>
+
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        title="Delete this email?"
+        description="This permanently removes the email for its owner. This cannot be undone."
+        confirmLabel="Delete"
+        destructive
+        onConfirm={handleDelete}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
 
       {/* Email content */}
       <div className="flex-1 px-6 py-6 overflow-y-auto">

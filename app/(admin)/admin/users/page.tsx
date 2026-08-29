@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import { adminGetUsers, adminSetUserRole } from '@/app/actions/admin-actions';
-import { ShieldCheck, User } from '@phosphor-icons/react';
+import { ShieldCheck, User, MagnifyingGlass } from '@phosphor-icons/react';
 
 interface UserItem {
   id: string;
@@ -19,6 +19,18 @@ export default function AdminUsersPage() {
   const [users, setUsers] = useState<UserItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isPending, startTransition] = useTransition();
+  const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState('');
+
+  const filteredUsers = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return users.filter((u) => {
+      const matchesSearch =
+        !q || u.name?.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+      const matchesRole = !roleFilter || u.role === roleFilter;
+      return matchesSearch && matchesRole;
+    });
+  }, [users, search, roleFilter]);
 
   useEffect(() => {
     adminGetUsers().then((data) => {
@@ -48,6 +60,31 @@ export default function AdminUsersPage() {
     <div>
       <h1 className="mb-6 text-2xl font-bold text-foreground">Users</h1>
 
+      <div className="mb-4 flex items-center gap-3">
+        <div className="relative max-w-md flex-1">
+          <MagnifyingGlass
+            size={16}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/50"
+          />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by name or email..."
+            className="h-9 w-full rounded-lg border border-border bg-muted/50 pl-9 pr-4 text-sm focus:border-primary/30 focus:outline-none focus:ring-2 focus:ring-primary/10"
+          />
+        </div>
+        <select
+          value={roleFilter}
+          onChange={(e) => setRoleFilter(e.target.value)}
+          className="h-9 rounded-lg border border-border bg-muted/50 px-3 text-sm focus:outline-none"
+        >
+          <option value="">All Roles</option>
+          <option value="user">User</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+
       <div className="overflow-hidden rounded-xl border border-border bg-card">
         <table className="w-full">
           <thead>
@@ -73,7 +110,14 @@ export default function AdminUsersPage() {
             </tr>
           </thead>
           <tbody>
-            {users.map((user) => (
+            {filteredUsers.length === 0 && (
+              <tr>
+                <td colSpan={6} className="px-4 py-8 text-center text-sm text-muted-foreground">
+                  No users match your search
+                </td>
+              </tr>
+            )}
+            {filteredUsers.map((user) => (
               <tr
                 key={user.id}
                 className="border-b border-border/50 transition-colors hover:bg-muted/30"

@@ -7,6 +7,8 @@ import {
   Users,
   ArrowLeft,
   ShieldCheck,
+  ClockCounterClockwise,
+  Globe,
 } from '@phosphor-icons/react';
 
 const NAV_ITEMS = [
@@ -14,6 +16,8 @@ const NAV_ITEMS = [
   { id: '/admin/emails', label: 'All Emails', icon: EnvelopeSimple },
   { id: '/admin/inboxes', label: 'Inboxes', icon: EnvelopeSimple },
   { id: '/admin/users', label: 'Users', icon: Users },
+  { id: '/admin/domains', label: 'Domain', icon: Globe },
+  { id: '/admin/logs', label: 'Logs', icon: ClockCounterClockwise },
 ];
 
 export function AdminSidebar() {

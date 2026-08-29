@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState, useTransition } from 'react';
-import { adminGetInboxes, adminToggleMonitorInbox } from '@/app/actions/admin-actions';
-import { Tray, Plus } from '@phosphor-icons/react';
+import { adminGetInboxes, adminToggleMonitorInbox, adminPurgeInbox } from '@/app/actions/admin-actions';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Tray, Plus, Trash } from '@phosphor-icons/react';
 import { useRouter } from 'next/navigation';
 
 interface InboxItem {
@@ -20,6 +21,7 @@ export default function AdminInboxesPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newInboxEmail, setNewInboxEmail] = useState('');
   const [emailError, setEmailError] = useState('');
+  const [purgeTarget, setPurgeTarget] = useState<InboxItem | null>(null);
   const router = useRouter();
 
   const handleCreateInbox = (e: React.FormEvent) => {
@@ -60,6 +62,16 @@ export default function AdminInboxesPage() {
       if (result.success) {
         setInboxes(inboxes.map(i => i.email === email ? { ...i, isMonitored: result.isMonitored } : i));
       }
+    });
+  };
+
+  const handlePurge = () => {
+    if (!purgeTarget) return;
+    const email = purgeTarget.email;
+    startTransition(async () => {
+      await adminPurgeInbox(email);
+      setPurgeTarget(null);
+      setInboxes((prev) => prev.filter((i) => i.email !== email));
     });
   };
 
@@ -205,6 +217,17 @@ export default function AdminInboxesPage() {
                         >
                           {inbox.isMonitored ? 'Monitored' : 'Monitor'}
                         </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPurgeTarget(inbox);
+                          }}
+                          disabled={isPending}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                          title="Purge inbox"
+                        >
+                          <Trash size={14} />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -214,6 +237,16 @@ export default function AdminInboxesPage() {
           </table>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={!!purgeTarget}
+        title={`Purge ${purgeTarget?.email}?`}
+        description={`This permanently deletes all ${purgeTarget?.count ?? 0} email(s) in this inbox. This cannot be undone.`}
+        confirmLabel="Purge"
+        destructive
+        onConfirm={handlePurge}
+        onCancel={() => setPurgeTarget(null)}
+      />
     </div>
   );
 }

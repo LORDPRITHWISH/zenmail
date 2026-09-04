@@ -2,17 +2,51 @@
 
 import { useEffect, useState, useCallback, useTransition } from 'react';
 import { adminGetLogs } from '@/app/actions/admin-actions';
-import { Trash, EnvelopeSimple, CaretLeft, CaretRight } from '@phosphor-icons/react';
+import {
+  Trash,
+  EnvelopeSimple,
+  CaretLeft,
+  CaretRight,
+  ShieldCheck,
+  Eye,
+  Question,
+} from '@phosphor-icons/react';
+
+type LogAction = 'delete_email' | 'purge_inbox' | 'set_role' | 'toggle_monitor';
 
 interface LogItem {
   id: string;
-  action: 'delete_email' | 'purge_inbox';
+  action: LogAction;
   target: string;
   meta: string;
   performedByEmail: string;
   performedByName?: string;
   createdAt: string;
 }
+
+const ACTION_META: Record<
+  LogAction,
+  { label: string; icon: typeof Trash; className: string }
+> = {
+  delete_email: {
+    label: 'Delete Email',
+    icon: EnvelopeSimple,
+    className: 'bg-amber-500/10 text-amber-600',
+  },
+  purge_inbox: { label: 'Purge Inbox', icon: Trash, className: 'bg-rose-500/10 text-rose-600' },
+  set_role: {
+    label: 'Role Change',
+    icon: ShieldCheck,
+    className: 'bg-violet-500/10 text-violet-600',
+  },
+  toggle_monitor: { label: 'Monitor', icon: Eye, className: 'bg-blue-500/10 text-blue-600' },
+};
+
+const UNKNOWN_ACTION = {
+  label: 'Unknown',
+  icon: Question,
+  className: 'bg-muted text-muted-foreground',
+};
 
 export default function AdminLogsPage() {
   const [logs, setLogs] = useState<LogItem[]>([]);
@@ -39,7 +73,7 @@ export default function AdminLogsPage() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold text-foreground">Delete Logs</h1>
+      <h1 className="mb-6 text-2xl font-bold text-foreground">Audit Log</h1>
 
       <div className="overflow-hidden rounded-xl border border-border bg-card">
         <div className="overflow-x-auto">
@@ -73,26 +107,21 @@ export default function AdminLogsPage() {
               ) : logs.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">
-                    No deletions logged yet
+                    No admin actions logged yet
                   </td>
                 </tr>
               ) : (
-                logs.map((log) => (
+                logs.map((log) => {
+                  const meta = ACTION_META[log.action] ?? UNKNOWN_ACTION;
+                  const Icon = meta.icon;
+                  return (
                   <tr key={log.id} className="border-b border-border/50 hover:bg-muted/30">
                     <td className="px-4 py-3">
                       <span
-                        className={`inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium ${
-                          log.action === 'purge_inbox'
-                            ? 'bg-rose-500/10 text-rose-600'
-                            : 'bg-amber-500/10 text-amber-600'
-                        }`}
+                        className={`inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium ${meta.className}`}
                       >
-                        {log.action === 'purge_inbox' ? (
-                          <Trash size={12} weight="fill" />
-                        ) : (
-                          <EnvelopeSimple size={12} weight="fill" />
-                        )}
-                        {log.action === 'purge_inbox' ? 'Purge Inbox' : 'Delete Email'}
+                        <Icon size={12} weight="fill" />
+                        {meta.label}
                       </span>
                     </td>
                     <td className="max-w-[220px] truncate px-4 py-3 text-sm font-medium text-foreground">
@@ -108,7 +137,8 @@ export default function AdminLogsPage() {
                       {new Date(log.createdAt).toLocaleString()}
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>

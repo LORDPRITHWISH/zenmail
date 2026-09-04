@@ -4,6 +4,7 @@ import { SessionProvider } from 'next-auth/react';
 import { AdminSidebar } from '@/components/admin/admin-sidebar';
 import { AdminHeader } from '@/components/admin/admin-header';
 import { ComposeDialog } from '@/components/mail/compose-dialog';
+import { SendToast } from '@/components/mail/send-toast';
 import { useMailStore } from '@/lib/store';
 
 export default function AdminLayout({
@@ -22,6 +23,7 @@ export default function AdminLayout({
           <main className="flex-1 overflow-y-auto p-6">{children}</main>
         </div>
         {isComposeOpen && <ComposeDialog key={composeKey} />}
+        <SendToast />
       </div>
     </SessionProvider>
   );

@@ -6,6 +6,7 @@ import { User } from '@/models/User';
 import { Email } from '@/models/Email';
 import { resend, RESEND_DOMAIN } from '@/lib/resend';
 import { MAX_ATTACHMENT_SIZE } from '@/lib/constants';
+import { htmlToText } from '@/lib/utils';
 import mongoose from 'mongoose';
 
 interface SendEmailInput {
@@ -84,6 +85,18 @@ export async function sendEmail(input: SendEmailInput) {
       ? new Date(input.scheduledAt)
       : null;
 
+  // A message that is HTML-only, or carries an empty text/plain part, reads as
+  // bulk mail to every filter worth the name. Always ship a real alternative.
+  const text = input.text?.trim() || htmlToText(input.html);
+
+  // Threading headers must carry a real RFC 5322 Message-ID. Ours for inbound
+  // mail is an internal `<resendId>-uid-<userId>` key, and a malformed
+  // In-Reply-To looks like forged mail — so only pass one through when it
+  // actually is a Message-ID. References repeats it so the reply threads.
+  const parentMessageId = /^<[^\s@]+@[^\s@]+>$/.test(input.inReplyTo ?? '')
+    ? input.inReplyTo
+    : null;
+
   try {
     const resendAttachments = input.attachments?.map((att) => ({
       filename: att.filename,
@@ -97,9 +110,11 @@ export async function sendEmail(input: SendEmailInput) {
       bcc: input.bcc || [],
       subject: input.subject,
       html: input.html,
-      text: input.text || '',
+      text,
       replyTo: input.replyTo || u.email,
-      headers: input.inReplyTo ? { 'In-Reply-To': input.inReplyTo } : undefined,
+      headers: parentMessageId
+        ? { 'In-Reply-To': parentMessageId, References: parentMessageId }
+        : undefined,
       attachments: resendAttachments,
       ...(scheduledAt ? { scheduledAt: scheduledAt.toISOString() } : {}),
     });
@@ -127,7 +142,7 @@ export async function sendEmail(input: SendEmailInput) {
       bcc: input.bcc || [],
       subject: input.subject,
       html: input.html,
-      text: input.text || '',
+      text,
       replyTo: input.replyTo || u.email,
       folder: scheduledAt ? 'scheduled' : 'sent',
       scheduledAt,

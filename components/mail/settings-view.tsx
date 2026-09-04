@@ -124,7 +124,7 @@ export function SettingsView() {
         <section className="mt-8">
           <h2 className="text-sm font-semibold text-foreground">Signature</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Added to the bottom of new messages, where you can still edit it before sending.
+            Added to new messages and replies, where you can still edit it before sending.
           </p>
           <div className="mt-3 rounded-xl border border-border bg-card">
             <RichEditor

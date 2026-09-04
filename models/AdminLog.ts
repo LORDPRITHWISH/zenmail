@@ -2,7 +2,7 @@ import mongoose, { Schema, model, models, Document } from 'mongoose';
 
 export interface IAdminLog extends Document {
   _id: mongoose.Types.ObjectId;
-  action: 'delete_email' | 'purge_inbox';
+  action: 'delete_email' | 'purge_inbox' | 'set_role' | 'toggle_monitor';
   target: string;
   meta: string;
   performedByEmail: string;

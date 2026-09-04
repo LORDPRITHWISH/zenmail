@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { adminGetUsers, adminSetUserRole } from '@/app/actions/admin-actions';
 import { ShieldCheck, User, MagnifyingGlass } from '@phosphor-icons/react';
 
@@ -16,6 +17,7 @@ interface UserItem {
 }
 
 export default function AdminUsersPage() {
+  const router = useRouter();
   const [users, setUsers] = useState<UserItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isPending, startTransition] = useTransition();
@@ -120,7 +122,11 @@ export default function AdminUsersPage() {
             {filteredUsers.map((user) => (
               <tr
                 key={user.id}
-                className="border-b border-border/50 transition-colors hover:bg-muted/30"
+                onClick={() =>
+                  router.push(`/admin/inboxes/${encodeURIComponent(user.email)}`)
+                }
+                title={`View ${user.email}'s mail`}
+                className="cursor-pointer border-b border-border/50 transition-colors hover:bg-muted/30"
               >
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">
@@ -165,7 +171,7 @@ export default function AdminUsersPage() {
                 <td className="px-4 py-3 text-sm text-muted-foreground">
                   {new Date(user.createdAt).toLocaleDateString()}
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                   <select
                     value={user.role}
                     onChange={(e) =>

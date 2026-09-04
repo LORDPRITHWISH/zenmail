@@ -90,5 +90,6 @@ EmailSchema.index({ userId: 1, isRead: 1 });
 EmailSchema.index({ threadId: 1 });
 EmailSchema.index({ pendingRecipientEmail: 1 }); // fast lookup on user sign-up
 EmailSchema.index({ folder: 1, scheduledAt: 1 }); // due-scheduled sweep
+EmailSchema.index({ folder: 1, createdAt: -1 }); // admin listing + volume trend
 
 export const Email = models.Email || model<IEmail>('Email', EmailSchema);

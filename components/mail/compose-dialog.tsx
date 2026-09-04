@@ -6,6 +6,7 @@ import { useSession } from 'next-auth/react';
 import { saveDraft, discardDraft } from '@/app/actions/send-email';
 import { getSettings } from '@/app/actions/settings-actions';
 import { MAX_ATTACHMENT_SIZE, UNDO_SEND_SECONDS } from '@/lib/constants';
+import { insertSignature } from '@/lib/utils';
 import { RecipientInput } from './recipient-input';
 import { RichEditor } from './rich-editor';
 import {
@@ -16,6 +17,8 @@ import {
   Trash,
   CaretUp,
   ClockCountdown,
+  ArrowsOut,
+  ArrowsIn,
 } from '@phosphor-icons/react';
 import { useTransition } from 'react';
 
@@ -26,7 +29,7 @@ function formatFileSize(bytes: number): string {
 }
 
 function quoteBlock(from: string, createdAt: string, body: string) {
-  return `<br/><br/><div style="border-left: 2px solid #ccc; padding-left: 12px; margin-left: 0; color: #666;">
+  return `<br/><br/><div data-zenmail-quote style="border-left: 2px solid #ccc; padding-left: 12px; margin-left: 0; color: #666;">
     <p>On ${new Date(createdAt).toLocaleDateString()}, ${from} wrote:</p>
     ${body}
   </div>`;
@@ -96,7 +99,7 @@ function initialState(
     return {
       ...blank,
       subject: `Fwd: ${replyTo.subject.replace(/^Fwd:\s*/i, '')}`,
-      html: `<br/><br/><div style="border-left: 2px solid #ccc; padding-left: 12px; margin-left: 0; color: #666;">
+      html: `<br/><br/><div data-zenmail-quote style="border-left: 2px solid #ccc; padding-left: 12px; margin-left: 0; color: #666;">
         <p>---------- Forwarded message ----------</p>
         <p>From: ${replyTo.from}</p>
         <p>Date: ${new Date(replyTo.createdAt).toLocaleDateString()}</p>
@@ -145,7 +148,8 @@ export function ComposeDialog() {
   const [fromAddress, setFromAddress] = useState(initial.from);
   const [showCcBcc, setShowCcBcc] = useState(initial.showCcBcc);
   const [attachments, setAttachments] = useState<ComposeAttachment[]>(initial.attachments);
-  const [isMinimized, setIsMinimized] = useState(false);
+  const [size, setSize] = useState<'docked' | 'min' | 'full'>('docked');
+  const isMinimized = size === 'min';
   const [sendError, setSendError] = useState<string | null>(null);
   const [scheduleAt, setScheduleAt] = useState('');
   const [showSchedule, setShowSchedule] = useState(false);
@@ -177,17 +181,14 @@ export function ComposeDialog() {
   );
 
   // Drop the signature in where the user can see and edit it, the way Gmail
-  // does — rather than stapling it on invisibly at send time.
+  // does — rather than stapling it on invisibly at send time. On a reply or
+  // forward it goes above the quoted mail, not stranded under it.
   useEffect(() => {
     if (composeDraft) return;
     let cancelled = false;
     getSettings().then(({ signature }) => {
       if (cancelled || !signature) return;
-      setHtml((prev) =>
-        prev.includes('data-zenmail-signature')
-          ? prev
-          : `${prev}<br/><div data-zenmail-signature>${signature}</div>`
-      );
+      setHtml((prev) => insertSignature(prev, signature));
     });
     return () => {
       cancelled = true;
@@ -213,6 +214,19 @@ export function ComposeDialog() {
   const markDirty = () => {
     isDirty.current = true;
   };
+
+  // Escape steps down one level rather than closing outright — losing a
+  // half-written mail to a stray keypress is worse than a second keypress.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      if (size === 'full') setSize('docked');
+      else closeCompose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [size, closeCompose]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -301,16 +315,22 @@ export function ComposeDialog() {
             ? 'Reply All'
             : 'Forward';
 
+  const frame = {
+    min: 'bottom-0 right-6 h-12 w-[500px] rounded-t-xl border-b-0',
+    docked: 'bottom-0 right-6 h-[600px] w-[560px] rounded-t-xl border-b-0',
+    full: 'inset-x-4 inset-y-4 rounded-xl md:inset-x-[8vw] md:inset-y-[5vh]',
+  }[size];
+
   return (
+    <>
+      {size === 'full' && <div className="fixed inset-0 z-40 bg-black/40" />}
     <div
-      className={`fixed bottom-0 right-6 z-50 flex flex-col rounded-t-xl border border-b-0 border-border bg-card shadow-2xl shadow-black/20 transition-all duration-300 ${
-        isMinimized ? 'h-12 w-[500px]' : 'h-[600px] w-[560px]'
-      }`}
+      className={`fixed z-50 flex flex-col border border-border bg-card shadow-2xl shadow-black/20 transition-all duration-300 ${frame}`}
     >
       {/* Header */}
       <div
         className="flex h-12 shrink-0 cursor-pointer items-center justify-between rounded-t-xl bg-foreground/[0.03] px-4"
-        onClick={() => isMinimized && setIsMinimized(false)}
+        onClick={() => isMinimized && setSize('docked')}
       >
         <h3 className="text-sm font-medium text-foreground">{title}</h3>
         <div className="flex items-center gap-1">
@@ -320,11 +340,22 @@ export function ComposeDialog() {
           <button
             onClick={(e) => {
               e.stopPropagation();
-              setIsMinimized(!isMinimized);
+              setSize(isMinimized ? 'docked' : 'min');
             }}
             className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+            title={isMinimized ? 'Restore' : 'Minimize'}
           >
             {isMinimized ? <CaretUp size={14} /> : <Minus size={14} />}
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setSize(size === 'full' ? 'docked' : 'full');
+            }}
+            className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+            title={size === 'full' ? 'Exit full screen' : 'Full screen'}
+          >
+            {size === 'full' ? <ArrowsIn size={14} /> : <ArrowsOut size={14} />}
           </button>
           <button
             onClick={(e) => {
@@ -542,5 +573,6 @@ export function ComposeDialog() {
         </div>
       )}
     </div>
+    </>
   );
 }

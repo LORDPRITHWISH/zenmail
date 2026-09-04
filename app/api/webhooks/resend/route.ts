@@ -5,10 +5,29 @@ import { connectDB } from '@/lib/mongoose';
 import { User } from '@/models/User';
 import { Email } from '@/models/Email';
 import { Rule, IRule } from '@/models/Rule';
+import { WebhookEvent } from '@/models/WebhookEvent';
 import { routeWithRules } from '@/lib/rules';
 import mongoose from 'mongoose';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
+
+/**
+ * Health telemetry for /admin/webhooks. Never throws — a failure to record must
+ * not turn a delivered email into a retried one.
+ */
+async function record(
+  type: string,
+  emailId: string | undefined,
+  status: 'ok' | 'failed',
+  detail: string
+) {
+  try {
+    await connectDB();
+    await WebhookEvent.create({ type, emailId, status, detail: detail.slice(0, 500) });
+  } catch (err) {
+    console.error('Failed to record webhook event:', err);
+  }
+}
 
 export async function POST(request: Request) {
   const secret = process.env.RESEND_WEBHOOK_SECRET;
@@ -30,23 +49,36 @@ export async function POST(request: Request) {
     }) as Record<string, unknown>;
   } catch (err) {
     console.warn('Rejected webhook with bad signature:', err);
+    // A rotated secret rejects every delivery, so this is worth surfacing.
+    await record('signature.invalid', undefined, 'failed', 'signature verification failed');
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
   }
 
   const eventType = (body.type as string) || 'email.received';
   const data = (body.data as Record<string, unknown>) ?? body;
+  const emailId = (data.email_id as string) || undefined;
 
   try {
     await connectDB();
 
     if (eventType === 'email.received') {
-      await handleInboundEmail(data);
+      const { delivered, total } = await handleInboundEmail(data);
+      await record(
+        eventType,
+        emailId,
+        delivered === total ? 'ok' : 'failed',
+        `${delivered}/${total} recipients stored`
+      );
     } else if (eventType === 'email.bounced') {
-      console.warn('Email bounced:', data.email_id);
+      console.warn('Email bounced:', emailId);
+      await record(eventType, emailId, 'failed', `bounced to ${(data.to as string[])?.join(', ') ?? '?'}`);
+    } else {
+      // Ignore email.sent — we track those ourselves
+      await record(eventType, emailId, 'ok', 'ignored');
     }
-    // Ignore email.sent — we track those ourselves
   } catch (err) {
     console.error(`Error handling ${eventType}:`, err);
+    await record(eventType, emailId, 'failed', String(err));
     // Signature already checked, so a 200 here only suppresses retries of a
     // request we genuinely failed to process.
   }
@@ -54,12 +86,14 @@ export async function POST(request: Request) {
   return NextResponse.json({ received: true });
 }
 
-async function handleInboundEmail(webhookData: Record<string, unknown>) {
+async function handleInboundEmail(
+  webhookData: Record<string, unknown>
+): Promise<{ delivered: number; total: number }> {
   const emailId = webhookData.email_id as string;
 
   if (!emailId) {
     console.error('Inbound webhook missing email_id', webhookData);
-    return;
+    throw new Error('inbound webhook missing email_id');
   }
 
   // ── Fetch full email content from Resend API ──────────────────────────────
@@ -85,6 +119,10 @@ async function handleInboundEmail(webhookData: Record<string, unknown>) {
   // ── Resolve each recipient to a userId (real or placeholder) ─────────────
   // Only the actual addressees get this email in their inbox.
   const recipientAddresses = [...new Set([...to, ...cc].map(extractEmail))];
+
+  if (recipientAddresses.length === 0) {
+    throw new Error(`inbound email ${emailId} has no resolvable recipients`);
+  }
 
   let deliveredCount = 0;
 
@@ -156,6 +194,8 @@ async function handleInboundEmail(webhookData: Record<string, unknown>) {
   }
 
   console.log(`✓ "${subject}" from ${from} → ${deliveredCount}/${recipientAddresses.length} recipients stored`);
+
+  return { delivered: deliveredCount, total: recipientAddresses.length };
 }
 
 function extractEmail(input: string): string {

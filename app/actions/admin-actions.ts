@@ -5,6 +5,9 @@ import { connectDB } from '@/lib/mongoose';
 import { User } from '@/models/User';
 import { Email, IAttachment } from '@/models/Email';
 import { AdminLog } from '@/models/AdminLog';
+import { WebhookEvent } from '@/models/WebhookEvent';
+import { toCSV } from '@/lib/csv';
+import { bucketTrend, type TrendRow } from '@/lib/trend';
 import { escapeRegex } from '@/lib/constants';
 import { resend, RESEND_DOMAIN } from '@/lib/resend';
 import mongoose from 'mongoose';
@@ -21,23 +24,16 @@ async function requireAdmin() {
   return session;
 }
 
-export async function adminGetAllEmails(
-  page: number = 1,
-  filters?: {
-    folder?: string;
-    search?: string;
-    from?: string;
-    to?: string;
-    hasAttachments?: boolean;
-    isRead?: boolean;
-  }
-) {
-  await requireAdmin();
-  await connectDB();
+export interface EmailFilters {
+  folder?: string;
+  search?: string;
+  from?: string;
+  to?: string;
+  hasAttachments?: boolean;
+  isRead?: boolean;
+}
 
-  const perPage = 50;
-  const skip = (page - 1) * perPage;
-
+function buildEmailQuery(filters?: EmailFilters): Record<string, unknown> {
   const query: Record<string, unknown> = {};
 
   if (filters?.folder) query.folder = filters.folder;
@@ -63,6 +59,17 @@ export async function adminGetAllEmails(
   if (filters?.hasAttachments) {
     query['attachments.0'] = { $exists: true };
   }
+
+  return query;
+}
+
+export async function adminGetAllEmails(page: number = 1, filters?: EmailFilters) {
+  await requireAdmin();
+  await connectDB();
+
+  const perPage = 50;
+  const skip = (page - 1) * perPage;
+  const query = buildEmailQuery(filters);
 
   const [emails, total] = await Promise.all([
     Email.find(query)
@@ -186,7 +193,7 @@ export async function adminGetUsers() {
 }
 
 export async function adminSetUserRole(userId: string, role: 'user' | 'admin') {
-  await requireAdmin();
+  const session = await requireAdmin();
   await connectDB();
 
   const userToUpdate = await User.findById(userId);
@@ -196,8 +203,16 @@ export async function adminSetUserRole(userId: string, role: 'user' | 'admin') {
     throw new Error('The superadmin cannot be demoted.');
   }
 
+  const previousRole = userToUpdate.role;
   userToUpdate.role = role;
   await userToUpdate.save();
+
+  await logAdminAction(
+    session,
+    'set_role',
+    userToUpdate.email,
+    `${previousRole || 'user'} → ${role}`
+  );
 
   return { success: true };
 }
@@ -250,12 +265,20 @@ export async function adminToggleMonitorInbox(email: string) {
   }
   
   await user.save();
+
+  await logAdminAction(
+    session,
+    'toggle_monitor',
+    email,
+    isMonitored ? 'monitoring stopped' : 'monitoring started'
+  );
+
   return { success: true, isMonitored: !isMonitored };
 }
 
 async function logAdminAction(
   session: Awaited<ReturnType<typeof requireAdmin>>,
-  action: 'delete_email' | 'purge_inbox',
+  action: 'delete_email' | 'purge_inbox' | 'set_role' | 'toggle_monitor',
   target: string,
   meta: string
 ) {
@@ -322,6 +345,108 @@ export async function adminGetLogs(page: number = 1) {
     })),
     total,
     totalPages: Math.ceil(total / perPage),
+  };
+}
+
+const EXPORT_LIMIT = 5000;
+
+export async function adminExportEmails(filters?: EmailFilters) {
+  await requireAdmin();
+  await connectDB();
+
+  // ponytail: hard cap and buffer the whole file in memory; switch to a cursor
+  // + streamed response if exports ever need to outgrow this.
+  const emails = await Email.find(buildEmailQuery(filters))
+    .sort({ createdAt: -1 })
+    .limit(EXPORT_LIMIT)
+    .select('from to cc subject folder isRead createdAt attachments userId')
+    .populate('userId', 'name email')
+    .lean();
+
+  const rows = emails.map((e) => {
+    const owner = (e as typeof e & { userId?: { name?: string; email?: string } }).userId;
+    return [
+      e.createdAt.toISOString(),
+      e.from,
+      (e.to || []).join('; '),
+      (e.cc || []).join('; '),
+      e.subject,
+      e.folder,
+      e.isRead ? 'read' : 'unread',
+      (e.attachments || []).length,
+      owner?.email ?? '',
+    ];
+  });
+
+  return {
+    csv: toCSV(
+      ['Date', 'From', 'To', 'Cc', 'Subject', 'Folder', 'Status', 'Attachments', 'Owner'],
+      rows
+    ),
+    count: rows.length,
+    truncated: rows.length === EXPORT_LIMIT,
+  };
+}
+
+export async function adminGetEmailTrend(days: number = 30) {
+  await requireAdmin();
+  await connectDB();
+
+  const window = days === 7 ? 7 : 30; // don't let a caller aggregate the whole collection
+  const since = new Date(Date.now() - (window - 1) * 86_400_000);
+  since.setUTCHours(0, 0, 0, 0);
+
+  const rows = await Email.aggregate([
+    // Drafts and scheduled mail were never received, so they'd skew the curve.
+    { $match: { createdAt: { $gte: since }, folder: { $nin: ['drafts', 'scheduled'] } } },
+    {
+      $group: {
+        _id: {
+          day: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+          folder: '$folder',
+        },
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+
+  return bucketTrend(
+    rows.map((r): TrendRow => ({ day: r._id.day, folder: r._id.folder, count: r.count })),
+    window
+  );
+}
+
+export async function adminGetWebhookHealth(page: number = 1) {
+  await requireAdmin();
+  await connectDB();
+
+  const perPage = 50;
+  const since = new Date(Date.now() - 86_400_000);
+
+  const [events, total, lastOk, ok24h, failed24h] = await Promise.all([
+    WebhookEvent.find()
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * perPage)
+      .limit(perPage)
+      .lean(),
+    WebhookEvent.countDocuments(),
+    WebhookEvent.findOne({ status: 'ok' }).sort({ createdAt: -1 }).select('createdAt').lean(),
+    WebhookEvent.countDocuments({ status: 'ok', createdAt: { $gte: since } }),
+    WebhookEvent.countDocuments({ status: 'failed', createdAt: { $gte: since } }),
+  ]);
+
+  return {
+    events: events.map((e) => ({
+      ...e,
+      id: e._id.toString(),
+      _id: e._id.toString(),
+      createdAt: e.createdAt.toISOString(),
+    })),
+    total,
+    totalPages: Math.ceil(total / perPage) || 1,
+    lastOkAt: (lastOk as { createdAt?: Date } | null)?.createdAt?.toISOString() ?? null,
+    ok24h,
+    failed24h,
   };
 }
 

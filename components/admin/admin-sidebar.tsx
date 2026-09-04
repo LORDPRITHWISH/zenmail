@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter, usePathname } from 'next/navigation';
+import { useMailStore } from '@/lib/store';
 import {
   ChartBar,
   EnvelopeSimple,
@@ -9,6 +10,8 @@ import {
   ShieldCheck,
   ClockCounterClockwise,
   Globe,
+  Broadcast,
+  PencilSimple,
 } from '@phosphor-icons/react';
 
 const NAV_ITEMS = [
@@ -17,12 +20,14 @@ const NAV_ITEMS = [
   { id: '/admin/inboxes', label: 'Inboxes', icon: EnvelopeSimple },
   { id: '/admin/users', label: 'Users', icon: Users },
   { id: '/admin/domains', label: 'Domain', icon: Globe },
-  { id: '/admin/logs', label: 'Logs', icon: ClockCounterClockwise },
+  { id: '/admin/webhooks', label: 'Webhooks', icon: Broadcast },
+  { id: '/admin/logs', label: 'Audit Log', icon: ClockCounterClockwise },
 ];
 
 export function AdminSidebar() {
   const router = useRouter();
   const pathname = usePathname();
+  const openCompose = useMailStore((s) => s.openCompose);
 
   return (
     <aside className="fixed left-0 top-0 z-30 flex h-svh w-60 flex-col border-r border-border bg-sidebar">
@@ -32,6 +37,17 @@ export function AdminSidebar() {
         <span className="text-sm font-bold text-sidebar-foreground">
           Admin Panel
         </span>
+      </div>
+
+      {/* Compose */}
+      <div className="p-3">
+        <button
+          onClick={() => openCompose()}
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-md shadow-primary/20 transition-all duration-200 hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/30 active:scale-[0.97]"
+        >
+          <PencilSimple size={18} weight="bold" />
+          <span>Compose</span>
+        </button>
       </div>
 
       {/* Navigation */}

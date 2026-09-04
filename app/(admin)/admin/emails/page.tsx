@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState, useTransition, useCallback } from 'react';
-import { adminGetAllEmails } from '@/app/actions/admin-actions';
+import { Suspense, useEffect, useState, useTransition, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { adminGetAllEmails, adminExportEmails } from '@/app/actions/admin-actions';
 import { AdminEmailView } from './admin-email-view';
 import {
   MagnifyingGlass,
@@ -9,6 +10,7 @@ import {
   CaretLeft,
   CaretRight,
   Paperclip,
+  DownloadSimple,
 } from '@phosphor-icons/react';
 
 interface Email {
@@ -23,15 +25,19 @@ interface Email {
   attachments: { id: string }[];
 }
 
-export default function AdminEmailsPage() {
+function AdminEmailsPageInner() {
+  const searchParams = useSearchParams();
   const [emails, setEmails] = useState<Email[]>([]);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [page, setPage] = useState(1);
   const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [folderFilter, setFolderFilter] = useState('');
+  const [folderFilter, setFolderFilter] = useState(searchParams.get('folder') || '');
+  const [unreadOnly, setUnreadOnly] = useState(searchParams.get('unread') === '1');
   const [isLoading, setIsLoading] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportNote, setExportNote] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const fetchEmails = useCallback((p: number = page) => {
@@ -40,22 +46,53 @@ export default function AdminEmailsPage() {
       const result = await adminGetAllEmails(p, {
         search: search || undefined,
         folder: folderFilter || undefined,
+        isRead: unreadOnly ? false : undefined,
       });
       setEmails(result.emails as Email[]);
       setTotal(result.total);
       setTotalPages(result.totalPages);
       setIsLoading(false);
     });
-  }, [page, search, folderFilter]);
+  }, [page, search, folderFilter, unreadOnly]);
 
   useEffect(() => {
     fetchEmails(1);
-  }, [folderFilter, fetchEmails]);
+  }, [folderFilter, unreadOnly, fetchEmails]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     setPage(1);
     fetchEmails(1);
+  };
+
+  const handleExport = async () => {
+    setIsExporting(true);
+    setExportNote(null);
+    try {
+      const { csv, count, truncated } = await adminExportEmails({
+        search: search || undefined,
+        folder: folderFilter || undefined,
+        isRead: unreadOnly ? false : undefined,
+      });
+      // The BOM is what makes Excel read the file as UTF-8.
+      const url = URL.createObjectURL(
+        new Blob(['﻿', csv], { type: 'text/csv;charset=utf-8' })
+      );
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `emails-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setExportNote(
+        truncated
+          ? `Exported the ${count.toLocaleString()} most recent matches (export cap reached).`
+          : `Exported ${count.toLocaleString()} email${count === 1 ? '' : 's'}.`
+      );
+    } catch {
+      setExportNote('Export failed. Try again.');
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   if (selectedEmailId) {
@@ -114,7 +151,36 @@ export default function AdminEmailsPage() {
             <option value="spam">Spam</option>
           </select>
         </div>
+
+        <label className="flex h-9 items-center gap-2 rounded-lg border border-border bg-muted/50 px-3 text-sm">
+          <input
+            type="checkbox"
+            checked={unreadOnly}
+            onChange={(e) => {
+              setUnreadOnly(e.target.checked);
+              setPage(1);
+            }}
+          />
+          Unread only
+        </label>
+
+        <button
+          type="button"
+          onClick={handleExport}
+          disabled={isExporting}
+          title="Download the emails matching the current filters as CSV"
+          className="flex h-9 items-center gap-2 rounded-lg border border-border bg-muted/50 px-3 text-sm text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+        >
+          <DownloadSimple size={16} />
+          {isExporting ? 'Exporting…' : 'Export CSV'}
+        </button>
       </div>
+
+      {exportNote && (
+        <p className="mb-3 text-xs text-muted-foreground" role="status">
+          {exportNote}
+        </p>
+      )}
 
       {/* Table */}
       <div className="overflow-hidden rounded-xl border border-border bg-card">
@@ -251,5 +317,13 @@ export default function AdminEmailsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function AdminEmailsPage() {
+  return (
+    <Suspense>
+      <AdminEmailsPageInner />
+    </Suspense>
   );
 }
